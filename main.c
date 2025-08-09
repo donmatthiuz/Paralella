@@ -2,20 +2,22 @@
 #include <stdlib.h>
 #include <time.h>
 #include "ecosystem.h"
+#include "organisms.h"
 #include <omp.h>
+#include "entity.h" 
 
 void generar_cantidades(int size, int *p, int *h, int *c) {
     int plantas, herbivoros, carnivoros;
 
     do {
-        carnivoros = rand() % (size + 1);          
-        herbivoros = carnivoros + 1 + rand() % (size - carnivoros + 1); // h > c, hasta size
-        if (herbivoros > size) herbivoros = size;  
+        carnivoros = 1 + rand() % size;
+        herbivoros = carnivoros + 1 + rand() % (size - carnivoros + 1);
+        if (herbivoros > size) herbivoros = size;
 
         int suma_hc = herbivoros + carnivoros;
 
         if (suma_hc >= size) {
-            plantas = size;                        
+            plantas = size;
         } else {
             plantas = suma_hc + 1 + rand() % (size - suma_hc);
         }
@@ -25,6 +27,7 @@ void generar_cantidades(int size, int *p, int *h, int *c) {
     *h = herbivoros;
     *c = carnivoros;
 }
+
 
 int main() {
 
@@ -42,19 +45,31 @@ int main() {
     printf("Ingrese el tick máximo para la simulación: ");
     scanf("%d", &tick_max);
 
-
+    printf("===================Ecosistema inicial=============\n ");
+    mostrarEcosistema(eco);
+    printf("================================================== \n");
     // Para cada tick de la simulación:
     for (; eco->tick <= tick_max; eco->tick++) {
-
+        // Para cada celda en la cuadrícula:
         #pragma omp parallel for collapse(2)
         for (int i = 0; i < eco->size; i++) {
              for (int j = 0; j < eco->size; j++) {
-                Entity e  = eco->grid[i][j];
-                 int tid = omp_get_thread_num();
 
+                
+                if (eco->grid[i][j].type == 1){
+                    actualizar_plantas(eco, i, j);
 
-                printf("Tick %d - Posición (%d,%d) - Tipo: %d - Hilo: %d\n",
-                   eco->tick, i, j, e.type, tid);
+                }
+                else if (eco->grid[i][j].type == 2){
+                    actualizar_herbivoros(eco, i, j);
+
+                }
+                else if(eco->grid[i][j].type == 3){
+                    actualizar_carnivoros(eco, i, j);
+
+                }
+                
+               
             }
         }
 

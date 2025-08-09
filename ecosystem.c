@@ -3,6 +3,7 @@
 #include "ecosystem.h"
 #include <time.h>
 
+
 // Colores ANSI
 #define RESET   "\033[0m"
 #define GREEN   "\033[0;32m"
@@ -46,6 +47,8 @@ void colocarEntidades(Ecosystem *eco, int tipo, int cantidad) {
             eco->grid[x][y].energy = (rand() % 20) + 5;
             eco->grid[x][y].age = 0;
             eco->grid[x][y].alive = 1;
+            eco->grid[x][y].consume = 0;
+            eco->grid[x][y].eatit = 0;
             colocadas++;
         }
     }

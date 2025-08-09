@@ -1,7 +1,7 @@
 #ifndef ECOSYSTEM_H
 #define ECOSYSTEM_H
 
-#include "organisms.h"
+#include "entity.h"
 
 
 typedef struct {

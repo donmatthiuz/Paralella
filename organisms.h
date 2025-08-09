@@ -1,11 +1,11 @@
 #ifndef ORGANISM_H
 #define ORGANISM_H
+#include "ecosystem.h"
+#include "entity.h"
 
-typedef struct {
-    char type; //1 es planta, 2 de herbiboro y 3 de carnivoro
-    int energy;
-    int age;
-    int alive; // 1 vivo 0 requetemuerto
-} Entity;
+
+void actualizar_plantas(Ecosystem* eco, int i, int j);
+void actualizar_herbivoros(Ecosystem* eco, int i, int j);
+void actualizar_carnivoros(Ecosystem* eco, int i, int j);
 
 #endif
