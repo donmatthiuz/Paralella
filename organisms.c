@@ -158,7 +158,7 @@ void actualizar_herbivoros(Entity** local_grid, int size, int i, int j, int* her
     }
 
     // Vida media de 30 años
-    if (e->age >= 30) {
+    if (e->age >= 50) {
         e->alive = 0;
         e->type = 0;
         (*herb_changes)--;
@@ -264,8 +264,8 @@ void actualizar_carnivoros(Entity** local_grid, int size, int i, int j, int* car
         }
     }
 
-    // Morir si no encuentra herbívoro en 2 ticks
-    if (e->consume >= 2) {
+    // Morir si no encuentra herbívoro en 4 ticks
+    if (e->consume >= 4) {
         e->alive = 0;
         e->type = 0;
         (*carn_changes)--;
@@ -273,8 +273,8 @@ void actualizar_carnivoros(Entity** local_grid, int size, int i, int j, int* car
         return;
     }
 
-    // Vida promedio de 15 años
-    if (e->age >= 15) {
+    // Vida promedio de 30 años
+    if (e->age >= 30) {
         e->alive = 0;
         e->type = 0;
         (*carn_changes)--;
