@@ -45,6 +45,10 @@
 # Kernel Module Compile Results
 *.mod*
 *.cmd
+*.exe
+*.out
+*.elf
+
 .tmp_versions/
 modules.order
 Module.symvers
