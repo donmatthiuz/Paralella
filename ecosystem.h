@@ -1,22 +1,26 @@
-// ecosystem.h
 #ifndef ECOSYSTEM_H
 #define ECOSYSTEM_H
 
-#define GRID_SIZE 20
+#include "organisms.h"
+
 
 typedef struct {
-    int type;  // 0: vacío, 1: planta, 2: herbívoro, 3: carnívoro
+    int type;
 } Cell;
 
 typedef struct {
-    Cell grid[GRID_SIZE][GRID_SIZE];
+    Entity **grid;      
+    int size;         
     int plant_count;
     int herbivore_count;
     int carnivore_count;
     int tick;
 } Ecosystem;
 
-// Si deseas declarar funciones aquí, también van:
+Ecosystem* crearEcosistema(int size);
+void liberarEcosistema(Ecosystem *eco);
 void mostrarEcosistema(Ecosystem* eco);
+void iniciarEcosistema(Ecosystem *eco, int n_plantas, int n_herb, int n_carn);
+void colocarEntidades(Ecosystem *eco, int tipo, int cantidad);
 
 #endif

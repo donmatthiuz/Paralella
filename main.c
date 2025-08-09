@@ -1,32 +1,50 @@
-// main.c
 #include <stdio.h>
+#include <stdlib.h>
+#include <time.h>
 #include "ecosystem.h"
 
+
+void generar_cantidades(int size, int *p, int *h, int *c) {
+    int plantas, herbivoros, carnivoros;
+
+    do {
+        carnivoros = rand() % (size + 1);          
+        herbivoros = carnivoros + 1 + rand() % (size - carnivoros + 1); // h > c, hasta size
+        if (herbivoros > size) herbivoros = size;  
+
+        int suma_hc = herbivoros + carnivoros;
+
+        if (suma_hc >= size) {
+            plantas = size;                        
+        } else {
+            plantas = suma_hc + 1 + rand() % (size - suma_hc);
+        }
+    } while (!(plantas > (herbivoros + carnivoros) && herbivoros > carnivoros && plantas <= size && herbivoros <= size && carnivoros <= size));
+
+    *p = plantas;
+    *h = herbivoros;
+    *c = carnivoros;
+}
+
 int main() {
-    Ecosystem eco = {0};
-    eco.tick = 1;
+    int size;
+    printf("Ingrese el tamaño del ecosistema: ");
+    scanf("%d", &size);
 
-    
-    eco.grid[0][0].type = 1;
-    eco.grid[0][1].type = 1;
-    eco.grid[0][2].type = 1;
-    eco.grid[0][3].type = 1;
-    eco.grid[0][4].type = 1;
-    eco.grid[1][0].type = 1;
-    eco.grid[1][1].type = 1;
-    eco.grid[1][2].type = 1;
-    eco.grid[1][3].type = 1;
-    eco.grid[1][4].type = 1;
+    srand(time(NULL));
 
-    
-    eco.grid[2][0].type = 2;
-    eco.grid[2][1].type = 2;
+    int p, h, c;
+    generar_cantidades(size, &p, &h, &c);
 
-    
-    eco.grid[2][3].type = 3;
-    eco.grid[2][4].type = 3;
+   
 
-    mostrarEcosistema(&eco);
+    Ecosystem *eco = crearEcosistema(size);
+    eco->tick = 1;
 
+    iniciarEcosistema(eco, p, h, c);
+
+    mostrarEcosistema(eco);
+
+    liberarEcosistema(eco);
     return 0;
 }
