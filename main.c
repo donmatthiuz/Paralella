@@ -27,23 +27,29 @@ void generar_cantidades(int size, int *p, int *h, int *c) {
 }
 
 int main() {
+
+    // inicializar cuadricula y epecies
     int size;
     printf("Ingrese el tamaño del ecosistema: ");
     scanf("%d", &size);
-
     srand(time(NULL));
-
     int p, h, c;
     generar_cantidades(size, &p, &h, &c);
-
-   
-
     Ecosystem *eco = crearEcosistema(size);
     eco->tick = 1;
-
     iniciarEcosistema(eco, p, h, c);
+    int tick_max;
+    printf("Ingrese el tick máximo para la simulación: ");
+    scanf("%d", &tick_max);
 
-    mostrarEcosistema(eco);
+
+
+    for (; eco->tick <= tick_max; eco->tick++) {
+
+        
+        mostrarEcosistema(eco);
+
+    }
 
     liberarEcosistema(eco);
     return 0;
