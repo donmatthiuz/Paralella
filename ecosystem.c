@@ -70,9 +70,12 @@ void iniciarEcosistema(Ecosystem *eco, int n_plantas, int n_herb, int n_carn) {
 
 
 
+#include <stdio.h>
+
 void mostrarEcosistema(Ecosystem* eco) {
     eco->plant_count = eco->herbivore_count = eco->carnivore_count = 0;
 
+    // Contar entidades
     for (int i = 0; i < eco->size; i++) {
         for (int j = 0; j < eco->size; j++) {
             Entity e = eco->grid[i][j];
@@ -86,6 +89,7 @@ void mostrarEcosistema(Ecosystem* eco) {
         }
     }
 
+    
     printf("Tick: %d | Plantas: %d | Herbívoros: %d | Carnívoros: %d\n\n",
            eco->tick, eco->plant_count, eco->herbivore_count, eco->carnivore_count);
 
@@ -103,5 +107,32 @@ void mostrarEcosistema(Ecosystem* eco) {
             }
         }
         printf("\n");
+    }
+
+    // eto es para guardarlo en un .txt
+    FILE *file = fopen("ecosistema_estado.txt", "a"); // "a" para acumular estados
+    if (file) {
+        fprintf(file, "Tick: %d | Plantas: %d | Herbívoros: %d | Carnívoros: %d\n",
+                eco->tick, eco->plant_count, eco->herbivore_count, eco->carnivore_count);
+
+        for (int i = 0; i < eco->size; i++) {
+            for (int j = 0; j < eco->size; j++) {
+                Entity e = eco->grid[i][j];
+                if (!e.alive) {
+                    fprintf(file, " . ");
+                } else if (e.type == 1) {
+                    fprintf(file, " P ");
+                } else if (e.type == 2) {
+                    fprintf(file, " H ");
+                } else if (e.type == 3) {
+                    fprintf(file, " C ");
+                }
+            }
+            fprintf(file, "\n");
+        }
+        fprintf(file, "\n");
+        fclose(file);
+    } else {
+        perror("Error al abrir el archivo ecosistema_estado.txt");
     }
 }
