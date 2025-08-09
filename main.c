@@ -2,7 +2,7 @@
 #include <stdlib.h>
 #include <time.h>
 #include "ecosystem.h"
-
+#include <omp.h>
 
 void generar_cantidades(int size, int *p, int *h, int *c) {
     int plantas, herbivoros, carnivoros;
@@ -43,13 +43,26 @@ int main() {
     scanf("%d", &tick_max);
 
 
-
+    // Para cada tick de la simulación:
     for (; eco->tick <= tick_max; eco->tick++) {
 
-        
+        #pragma omp parallel for collapse(2)
+        for (int i = 0; i < eco->size; i++) {
+             for (int j = 0; j < eco->size; j++) {
+                Entity e  = eco->grid[i][j];
+                 int tid = omp_get_thread_num();
+
+
+                printf("Tick %d - Posición (%d,%d) - Tipo: %d - Hilo: %d\n",
+                   eco->tick, i, j, e.type, tid);
+            }
+        }
+
         mostrarEcosistema(eco);
 
     }
+
+    
 
     liberarEcosistema(eco);
     return 0;
