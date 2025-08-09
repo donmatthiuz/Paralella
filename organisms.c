@@ -16,7 +16,7 @@ void actualizar_plantas(Ecosystem* eco, int i, int j) {
         e->alive = 0;
         e->type = 0;
         eco->plant_count--;
-        printf("Planta en (%d, %d) murió por energía 0\n", i, j);
+        // printf("Planta en (%d, %d) murió por energía 0\n", i, j);
         return;
     }
 
@@ -151,7 +151,7 @@ void actualizar_herbivoros(Ecosystem* eco, int i, int j) {
                 neighbor->eatit = 0;
                 eco->herbivore_count++;
                 e->eatit = 0;
-                printf("Herbívoro reproducido en (%d,%d)\n", nx, ny);
+                // printf("Herbívoro reproducido en (%d,%d)\n", nx, ny);
                 break;
             }
         }
@@ -162,7 +162,7 @@ void actualizar_herbivoros(Ecosystem* eco, int i, int j) {
         e->alive = 0;
         e->type = 0;
         eco->herbivore_count--;
-        printf("Herbívoro en (%d,%d) murió por no alimentarse 3 ticks consecutivos\n", i, j);
+        // printf("Herbívoro en (%d,%d) murió por no alimentarse 3 ticks consecutivos\n", i, j);
     }
 
 
@@ -172,7 +172,7 @@ void actualizar_herbivoros(Ecosystem* eco, int i, int j) {
         e->alive = 0;
         e->type = 0;
         eco->herbivore_count--;
-        printf("Herbívoro en (%d,%d) murió por no alimentarse 3 ticks consecutivos\n", i, j);
+        // printf("Herbívoro en (%d,%d) murió por no alimentarse 3 ticks consecutivos\n", i, j);
     }
 }
 
@@ -270,7 +270,7 @@ void actualizar_carnivoros(Ecosystem* eco, int i, int j) {
                 neighbor->eatit = 0;
                 eco->carnivore_count++;
                 e->eatit = 0;
-                printf("Carnívoro reproducido en (%d,%d)\n", nx, ny);
+                // printf("Carnívoro reproducido en (%d,%d)\n", nx, ny);
                 break;
             }
         }
