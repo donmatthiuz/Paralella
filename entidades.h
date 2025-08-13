@@ -25,5 +25,10 @@ typedef struct {
 } Interseccion;
 
 
+Interseccion crear_interseccion(int cantidadAutos, int cantidadSemaforos);
+Semaforo crear_semaforo(int numero, int estado, int carril);
+Auto crear_auto(int numero, int posicion, int carril);
+
+
 
 #endif
