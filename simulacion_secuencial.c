@@ -202,7 +202,7 @@ int contar_autos_activos(Interseccion** grid, int nFilas, int nColumnas) {
     return total;
 }
 
-// Main mejorado
+
 int main() {
     int nFilas = 2;
     int nColumnas = 2;
