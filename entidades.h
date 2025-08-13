@@ -6,28 +6,30 @@
 
 typedef struct {
     int numero;
-    int posicion; // el numero de la interseccion
+    int posicion;
     int carril;
+    int activo;
 } Auto;
 
-
 typedef struct {
-    int numero;
-    int estado;  // 0 rojo, 1 amarllo, 2 verde         
+    int id;
+    int estado;
     int carril;
+    int tiempo_restante;
 } Semaforo;
 
 typedef struct {
-    Auto *autos;
+    Auto* autos;
+    Semaforo* semaforos;
     int cantidadAutos;
-    Semaforo *semaforos;
     int cantidadSemaforos;
 } Interseccion;
 
 
-Interseccion crear_interseccion(int cantidadAutos, int cantidadSemaforos);
-Semaforo crear_semaforo(int numero, int estado, int carril);
+
 Auto crear_auto(int numero, int posicion, int carril);
+Semaforo crear_semaforo(int id, int estado, int carril);
+Interseccion crear_interseccion(int nAutos, int nSemaforos);
 
 
 

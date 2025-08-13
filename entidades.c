@@ -3,26 +3,28 @@
 #include "entidades.h"
 
 Auto crear_auto(int numero, int posicion, int carril) {
-    Auto a;
-    a.numero = numero;
-    a.posicion = posicion;
-    a.carril = carril;
-    return a;
+    Auto auto_nuevo;
+    auto_nuevo.numero = numero;
+    auto_nuevo.posicion = posicion;
+    auto_nuevo.carril = carril;
+    auto_nuevo.activo = 1;
+    return auto_nuevo;
 }
 
-Semaforo crear_semaforo(int numero, int estado, int carril) {
-    Semaforo s;
-    s.numero = numero;
-    s.estado = estado;
-    s.carril = carril;
-    return s;
+Semaforo crear_semaforo(int id, int estado, int carril) {
+    Semaforo sem;
+    sem.id = id;
+    sem.estado = estado;
+    sem.carril = carril;
+    sem.tiempo_restante = 5; // 5 segundos por estado
+    return sem;
 }
 
-Interseccion crear_interseccion(int cantidadAutos, int cantidadSemaforos) {
+Interseccion crear_interseccion(int nAutos, int nSemaforos) {
     Interseccion inter;
-    inter.cantidadAutos = cantidadAutos;
-    inter.autos = malloc(sizeof(Auto) * cantidadAutos);
-    inter.cantidadSemaforos = cantidadSemaforos;
-    inter.semaforos = malloc(sizeof(Semaforo) * cantidadSemaforos);
+    inter.autos = (Auto*)malloc(nAutos * sizeof(Auto));
+    inter.semaforos = (Semaforo*)malloc(nSemaforos * sizeof(Semaforo));
+    inter.cantidadAutos = nAutos;
+    inter.cantidadSemaforos = nSemaforos;
     return inter;
 }
