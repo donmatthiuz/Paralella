@@ -3,6 +3,11 @@
 #include <unistd.h>
 #include "entidades.h"
 
+#define RESET   "\033[0m"
+#define CYAN    "\033[0;36m"
+#define GREEN   "\033[0;32m"
+#define YELLOW  "\033[0;33m"
+#define RED     "\033[0;31m"
 
 char estado_semaforo(int estado) {
     if (estado == 0) return 'R';
@@ -10,182 +15,148 @@ char estado_semaforo(int estado) {
     return 'V';
 }
 
-void mostrar_interfaz(Interseccion inter) {
-    printf("\n=== INTERSECCIÓN ===\n");
-    
- 
-    printf("       %c  \n", estado_semaforo(inter.semaforos[0].estado));
-    printf("       |  \n");
-    
- 
-    int autos_verticales_antes = 0;
+void mostrar_lista(Interseccion inter, int iteracion, int fila, int columna) {
+    printf("%s--- Iteración %d - Intersección [%d,%d] --- %s\n", CYAN, iteracion, fila, columna, RESET);
     for (int i = 0; i < inter.cantidadAutos; i++) {
-        if (inter.autos[i].carril == 0 && inter.autos[i].posicion == 0 && inter.autos[i].activo) {
-            printf("       ↑ Auto%d\n", inter.autos[i].numero);
-            autos_verticales_antes++;
-        }
+        printf("Vehículo %d - Posición: %d - Activo: %d\n", inter.autos[i].numero, inter.autos[i].posicion, inter.autos[i].activo);
     }
-    
- 
-    if (autos_verticales_antes == 0) {
-        printf("       |\n");
-    }
-    
- 
-    printf(" %c-----+----- %c\n", 
-           estado_semaforo(inter.semaforos[1].estado), 
-           estado_semaforo(inter.semaforos[1].estado));
-    
- 
-    printf("← ");
-    int autos_horizontales = 0;
-    for (int i = 0; i < inter.cantidadAutos; i++) {
-        if (inter.autos[i].carril == 1 && inter.autos[i].activo) {
-            if (inter.autos[i].posicion == 0) {
-                printf("Auto%d ", inter.autos[i].numero);
-                autos_horizontales++;
-            }
-        }
-    }
-    if (autos_horizontales == 0) {
-        printf("      ");
+    for (int i = 0; i < inter.cantidadSemaforos; i++) {
+        char* color = RESET;
+        if (inter.semaforos[i].estado == 0) color = RED;
+        else if (inter.semaforos[i].estado == 1) color = YELLOW;
+        else if (inter.semaforos[i].estado == 2) color = GREEN;
+
+        printf("Semáforo %d - Estado: %s%c%s\n",
+            inter.semaforos[i].id,
+            color,
+            estado_semaforo(inter.semaforos[i].estado),
+            RESET
+        );
     }
     printf("\n");
-    
-    // Línea inferior
-    printf("       |\n");
-    
-    // Autos verticales, después del cruce
-    for (int i = 0; i < inter.cantidadAutos; i++) {
-        if (inter.autos[i].carril == 0 && inter.autos[i].posicion == 2 && inter.autos[i].activo) {
-            printf("       ↑ Auto%d\n", inter.autos[i].numero);
-        }
-    }
-    
-    // Mostrar estado de semáforos
-    printf("\nEstado Semáforos:\n");
-    printf("Vertical: %c (tiempo: %d)\n", 
-           estado_semaforo(inter.semaforos[0].estado), 
-           inter.semaforos[0].tiempo_restante);
-    printf("Horizontal: %c (tiempo: %d)\n", 
-           estado_semaforo(inter.semaforos[1].estado), 
-           inter.semaforos[1].tiempo_restante);
 }
 
 void actualizar_semaforos(Interseccion* inter) {
     for (int i = 0; i < inter->cantidadSemaforos; i++) {
-        inter->semaforos[i].tiempo_restante--;
-        
-        if (inter->semaforos[i].tiempo_restante <= 0) {
-            // Cambiar estado del semáforo
-            if (inter->semaforos[i].estado == 2) { // Verde -> Amarillo
-                inter->semaforos[i].estado = 1;
-                inter->semaforos[i].tiempo_restante = 2; // 2 segundos en amarillo
-            } else if (inter->semaforos[i].estado == 1) { // Amarillo -> Rojo
-                inter->semaforos[i].estado = 0;
-                inter->semaforos[i].tiempo_restante = 5; // 5 segundos en rojo
+        Semaforo* sem = &inter->semaforos[i];
+        sem->tiempo_restante--;
+
+        if (sem->tiempo_restante <= 0) {
+            if (sem->estado == 2) sem->estado = 1, sem->tiempo_restante = 2;
+            else if (sem->estado == 1) sem->estado = 0, sem->tiempo_restante = 5;
+            else sem->estado = 2, sem->tiempo_restante = 5;
+        }
+    }
+}
+
+void mover_autos(Interseccion** grid, int nFilas, int nColumnas) {
+    for (int f = 0; f < nFilas; f++) {
+        for (int c = 0; c < nColumnas; c++) {
+            Interseccion* inter = &grid[f][c];
+            for (int i = 0; i < inter->cantidadAutos; i++) {
+                Auto* auto_actual = &inter->autos[i];
+                if (!auto_actual->activo) continue;
+
+                // Buscar semáforo del carril
+                Semaforo* sem = NULL;
+                for (int j = 0; j < inter->cantidadSemaforos; j++) {
+                    if (inter->semaforos[j].carril == auto_actual->carril) {
+                        sem = &inter->semaforos[j];
+                        break;
+                    }
+                }
+                if (!sem) continue;
+
+                if (auto_actual->posicion == 0) {
+                    if (sem->estado == 2) auto_actual->posicion++;
+                } else {
+                    auto_actual->posicion++;
+                }
+
                 
-                // Activar el otro semáforo
-                int otro_semaforo = (i == 0) ? 1 : 0;
-                if (inter->semaforos[otro_semaforo].estado == 0) {
-                    inter->semaforos[otro_semaforo].estado = 2; // Verde
-                    inter->semaforos[otro_semaforo].tiempo_restante = 5;
+                if (auto_actual->posicion >= inter->longitud) {
+                    int nf = f + auto_actual->dir_fila;
+                    int nc = c + auto_actual->dir_col;
+
+                    if (nf >= 0 && nf < nFilas && nc >= 0 && nc < nColumnas) {
+                        // Buscar un carril libre en la nueva intersección (misma lógica de carril)
+                        Interseccion* destino = &grid[nf][nc];
+                        for (int k = 0; k < destino->cantidadAutos; k++) {
+                            if (!destino->autos[k].activo) {
+                                destino->autos[k] = *auto_actual;
+                                destino->autos[k].posicion = 0;
+                                break;
+                            }
+                        }
+                    }
+                    auto_actual->activo = 0;
+                    printf("Auto %d cruzó de intersección [%d,%d] a [%d,%d]\n", auto_actual->numero, f, c, nf, nc);
                 }
-            } else { // Rojo -> Verde (solo si el otro está en rojo)
-                int otro_semaforo = (i == 0) ? 1 : 0;
-                if (inter->semaforos[otro_semaforo].estado == 0) {
-                    inter->semaforos[i].estado = 2;
-                    inter->semaforos[i].tiempo_restante = 5;
-                }
             }
         }
     }
 }
 
-void mover_autos(Interseccion* inter) {
-    for (int i = 0; i < inter->cantidadAutos; i++) {
-        if (!inter->autos[i].activo) continue;
-        
-        Auto* auto_actual = &inter->autos[i];
-        
-        // Verificar si puede moverse según el semáforo
-        int puede_moverse = 0;
-        
-        if (auto_actual->carril == 0) { // Carril vertical
-            if (auto_actual->posicion == 0 && inter->semaforos[0].estado == 2) {
-                puede_moverse = 1; // Verde, puede pasar
-            } else if (auto_actual->posicion > 0) {
-                puede_moverse = 1; // Ya pasó el semáforo
-            }
-        } else { // Carril horizontal
-            if (auto_actual->posicion == 0 && inter->semaforos[1].estado == 2) {
-                puede_moverse = 1; // Verde, puede pasar
-            } else if (auto_actual->posicion > 0) {
-                puede_moverse = 1; // Ya pasó el semáforo
-            }
-        }
-        
-        // Mover el auto si puede
-        if (puede_moverse) {
-            auto_actual->posicion++;
-            
-            // Si el auto sale de la intersección, desactivarlo
-            if (auto_actual->posicion > 2) {
-                auto_actual->activo = 0;
-                printf("Auto%d salió de la intersección\n", auto_actual->numero);
-            }
-        }
-    }
-}
-
-int hay_autos_activos(Interseccion inter) {
-    for (int i = 0; i < inter.cantidadAutos; i++) {
-        if (inter.autos[i].activo) return 1;
-    }
-    return 0;
-}
-
+// Main
 int main() {
-    int nAutos = 6;
+    int nFilas = 2;
+    int nColumnas = 2;
+    int nAutos = 5;
     int nSemaforos = 2;
-    Interseccion inter = crear_interseccion(nAutos, nSemaforos);
-    
-    // Crear autos verticales (carril 0)
-    inter.autos[0] = crear_auto(0, 0, 0); // antes del cruce
-    inter.autos[1] = crear_auto(1, 0, 0);
-    inter.autos[2] = crear_auto(2, 0, 0);
-    
-    // Crear autos horizontales (carril 1)
-    inter.autos[3] = crear_auto(3, 0, 1);
-    inter.autos[4] = crear_auto(4, 0, 1);
-    inter.autos[5] = crear_auto(5, 0, 1);
-    
-    // Semáforo vertical inicia en verde
-    inter.semaforos[0] = crear_semaforo(0, 2, 0);
-    
-    // Semáforo horizontal inicia en rojo
-    inter.semaforos[1] = crear_semaforo(1, 0, 1);
-    
-    printf("Iniciando simulación de intersección...\n");
-    printf("Presiona Ctrl+C para detener\n\n");
-    
-    // Simulación principal
-    while (hay_autos_activos(inter)) {
-        // limpiar_pantalla();
-        mostrar_interfaz(inter);
-        
-        sleep(1); // Esperar 1 segundo
-        
-        // Actualizar lógica
-        actualizar_semaforos(&inter);
-        mover_autos(&inter);
+    int longitud = 5;
+
+  
+    Interseccion** grid = malloc(nFilas * sizeof(Interseccion*));
+    for (int f = 0; f < nFilas; f++) {
+        grid[f] = malloc(nColumnas * sizeof(Interseccion));
+        for (int c = 0; c < nColumnas; c++) {
+            grid[f][c] = crear_interseccion(nAutos, nSemaforos, longitud);
+
+            // Crear autos
+            for (int i = 0; i < nAutos; i++) {
+                int dir_fila = (i % 2); // algunos hacia abajo
+                int dir_col = ((i+1) % 2); // algunos hacia derecha
+                grid[f][c].autos[i] = crear_auto(i, 0, i % nSemaforos, dir_fila, dir_col);
+            }
+
+            // Crear semáforos
+            for (int i = 0; i < nSemaforos; i++) {
+                int estado = i % 3;
+                grid[f][c].semaforos[i] = crear_semaforo(i, estado, i);
+            }
+        }
     }
-    
-    printf("\n¡Todos los autos han pasado por la intersección!\n");
-    
-    // Liberar memoria
-    free(inter.autos);
-    free(inter.semaforos);
-    
+
+   
+    int iteracion = 1;
+    while (iteracion <= 10) {
+        for (int f = 0; f < nFilas; f++) {
+            for (int c = 0; c < nColumnas; c++) {
+                mostrar_lista(grid[f][c], iteracion, f, c);
+            }
+        }
+
+        mover_autos(grid, nFilas, nColumnas);
+
+        for (int f = 0; f < nFilas; f++) {
+            for (int c = 0; c < nColumnas; c++) {
+                actualizar_semaforos(&grid[f][c]);
+            }
+        }
+
+        sleep(1);
+        iteracion++;
+    }
+
+   
+    for (int f = 0; f < nFilas; f++) {
+        for (int c = 0; c < nColumnas; c++) {
+            free(grid[f][c].autos);
+            free(grid[f][c].semaforos);
+        }
+        free(grid[f]);
+    }
+    free(grid);
+
     return 0;
 }
