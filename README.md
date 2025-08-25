@@ -1,7 +1,7 @@
 
-# Black Hole Simulation
+# Screen Savor de Hoyo Negro
 
-Este proyecto es un motor gráfico básico que utiliza **OpenGL**, **GLFW**, **GLEW** y **GLM** para representar un “hoyo negro” en 2D/3D.
+Este proyecto es un motor gráfico básico que utiliza **OpenGL**, **GLFW**, **GLEW** y **GLM** para representar un “hoyo negro” real como screen saver.
 
 ## Requisitos
 
