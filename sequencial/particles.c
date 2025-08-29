@@ -4,6 +4,7 @@
 #include <math.h>
 #include <time.h>
 #include <stdint.h>
+#include <stdbool.h>
 
 #define WINDOW_WIDTH 800
 #define WINDOW_HEIGHT 600
@@ -24,7 +25,6 @@ void initPath() {
     path[3] = (Vec2){100, 500};
 }
 
-// flow-field vector (field centrado + rotacional)
 void getFlowField(float x, float y, float* fx, float* fy) {
     float cx = WINDOW_WIDTH / 2.0f;
     float cy = WINDOW_HEIGHT / 2.0f;
@@ -33,8 +33,8 @@ void getFlowField(float x, float y, float* fx, float* fy) {
     float dy = y - cy;
     float dist = sqrtf(dx*dx + dy*dy) + 0.001f;
 
-    float spiralStrength = 120.0f;   // fuerza rotacional (px/s^2 aproximado)
-    float inwardStrength = 30.0f;    // atracción hacia el centro
+    float spiralStrength = 120.0f;
+    float inwardStrength = 30.0f;
 
     float fx_rot = -dy / dist * spiralStrength;
     float fy_rot = dx / dist * spiralStrength;
@@ -56,6 +56,9 @@ uint32_t activeForces = FORCE_GRAVITY;
 
 int mouseX = 0, mouseY = 0;
 int mouseWindActive = 0; 
+
+// Control de respawn manual/auto
+bool autoRespawn = false; 
 
 typedef struct {
     float x, y;
@@ -96,6 +99,21 @@ void createRandomParticle(Particle* particle) {
     particle->pathIndex = rand() % (pathLength ? pathLength : 1);
 }
 
+// Resetea toda la simulación 
+void resetSimulation(ParticleSystem* ps) {
+    for (size_t i = 0; i < ps->count; ++i) {
+        createRandomParticle(&ps->p[i]);
+        // si FIRE activo, spawn cerca del fondo para mejor efecto
+        if (activeForces & FORCE_FIRE) {
+            ps->p[i].x = (float)(WINDOW_WIDTH/2 + (rand()%200 - 100));
+            ps->p[i].y = (float)(WINDOW_HEIGHT - (rand()%50));
+            ps->p[i].vx = ((float)rand()/RAND_MAX - 0.5f)*40.0f;
+            ps->p[i].vy = -((float)rand()/RAND_MAX)*60.0f;
+            ps->p[i].life = 0.8f;
+        }
+    }
+}
+
 // explosion
 void triggerExplosion(ParticleSystem* ps, float ex, float ey, float strength) {
     for (size_t i = 0; i < ps->count; ++i) {
@@ -103,7 +121,7 @@ void triggerExplosion(ParticleSystem* ps, float ex, float ey, float strength) {
         float dy = ps->p[i].y - ey;
         float dist = sqrtf(dx*dx + dy*dy) + 0.0001f;
         if (dist < 300.0f) { 
-            float impulse = strength * (1.0f - (dist / 300.0f)); // decae con distancia
+            float impulse = strength * (1.0f - (dist / 300.0f));
             ps->p[i].vx += (dx / dist) * impulse * ps->p[i].inv_mass;
             ps->p[i].vy += (dy / dist) * impulse * ps->p[i].inv_mass;
             ps->p[i].life = 1.0f;
@@ -113,12 +131,15 @@ void triggerExplosion(ParticleSystem* ps, float ex, float ey, float strength) {
 
 // actualizar una partícula acumulando fuerzas
 void updateParticle(Particle* particle, float deltaTime) {
+    // si la partícula está "muerta" (life<=0) y no hay autoRespawn, no la actualizamos
+    if (particle->life <= 0.0f && !autoRespawn) return;
+
     float fx = 0.0f;
     float fy = 0.0f;
 
     // GRAVEDAD
     if (activeForces & FORCE_GRAVITY) {
-        fy += GRAVITY_ACCEL; // ya es aceleración en px/s^2
+        fy += GRAVITY_ACCEL;
     }
 
     // FLOW FIELD 
@@ -136,8 +157,8 @@ void updateParticle(Particle* particle, float deltaTime) {
         float dist = sqrtf(dx*dx + dy*dy) + 0.0001f;
         float maxInfluence = 250.0f;
         if (dist < maxInfluence) {
-            float windStrength = 20000.0f; // ajusta intensidad
-            float falloff = 1.0f - (dist / maxInfluence); // 1..0
+            float windStrength = 20000.0f;
+            float falloff = 1.0f - (dist / maxInfluence);
             float w = windStrength * falloff;
             fx += (dx / dist) * w;
             fy += (dy / dist) * w;
@@ -146,43 +167,37 @@ void updateParticle(Particle* particle, float deltaTime) {
 
     // FIRE
     if (activeForces & FORCE_FIRE) {
-        // más fuerte en la parte baja de la pantalla
         float fireStrength = 500.0f * (1.0f - (particle->y / WINDOW_HEIGHT));
         float jitter = ((float)rand() / RAND_MAX - 0.5f) * 120.0f;
-        fy -= fireStrength; // hacia arriba => restar en y
+        fy -= fireStrength;
         fx += jitter * 0.3f;
-        // vida puede crecer si queremos que "salgan" partículas
         particle->life += 0.01f;
         if (particle->life > 1.0f) particle->life = 1.0f;
     }
 
+    // Integración
     particle->vx += fx * particle->inv_mass * deltaTime;
     particle->vy += fy * particle->inv_mass * deltaTime;
 
-    // Posición
     particle->x += particle->vx * deltaTime;
     particle->y += particle->vy * deltaTime;
 
-    // Si estamos usando gravedad -> rebotes en bordes
-    if (activeForces & FORCE_GRAVITY) {
-        if (particle->x - particle->radius < 0) {
-            particle->x = particle->radius;
-            particle->vx *= -BOUNCE_DAMPING;
-        } else if (particle->x + particle->radius > WINDOW_WIDTH) {
-            particle->x = WINDOW_WIDTH - particle->radius;
-            particle->vx *= -BOUNCE_DAMPING;
-        }
-
-        if (particle->y - particle->radius < 0) {
-            particle->y = particle->radius;
-            particle->vy *= -BOUNCE_DAMPING;
-        } else if (particle->y + particle->radius > WINDOW_HEIGHT) {
-            particle->y = WINDOW_HEIGHT - particle->radius;
-            particle->vy *= -BOUNCE_DAMPING;
-        }
+    // ---- COLISIONES con bordes ----
+    if (particle->x - particle->radius < 0) {
+        particle->x = particle->radius;
+        particle->vx *= -BOUNCE_DAMPING;
+    } else if (particle->x + particle->radius > WINDOW_WIDTH) {
+        particle->x = WINDOW_WIDTH - particle->radius;
+        particle->vx *= -BOUNCE_DAMPING;
+    }
+    if (particle->y - particle->radius < 0) {
+        particle->y = particle->radius;
+        particle->vy *= -BOUNCE_DAMPING;
+    } else if (particle->y + particle->radius > WINDOW_HEIGHT) {
+        particle->y = WINDOW_HEIGHT - particle->radius;
+        particle->vy *= -BOUNCE_DAMPING;
     }
 
-    // vida decrece )
     if (!(activeForces & FORCE_FIRE)) {
         particle->life -= 0.0025f;
         if (particle->life < 0) particle->life = 0;
@@ -190,13 +205,12 @@ void updateParticle(Particle* particle, float deltaTime) {
 }
 
 void drawParticle(SDL_Renderer* renderer, Particle* particle) {
-    if (particle->life <= 0) return;
+    if (particle->life <= 0) return; // no dibujar "muertas" cuando autoRespawn está OFF
     int alpha = (int)(particle->life * 255);
     int red = 255;
     int green = (int)(particle->life * 160);
     int blue = (int)(particle->life * 80);
 
-    // si FIRE activo, color más amarillento
     if (activeForces & FORCE_FIRE) {
         red = 255;
         green = 140 + (int)(particle->life * 80);
@@ -221,9 +235,9 @@ void drawParticle(SDL_Renderer* renderer, Particle* particle) {
 void updateParticleSystem(ParticleSystem* ps, float deltaTime) {
     for (size_t i = 0; i < ps->count; i++) {
         updateParticle(&ps->p[i], deltaTime);
-        if (ps->p[i].life <= 0) {
+
+        if (ps->p[i].life <= 0 && autoRespawn) {
             createRandomParticle(&ps->p[i]);
-            // si FIRE está activo, spawn cerca del fondo
             if (activeForces & FORCE_FIRE) {
                 ps->p[i].x = (float)(WINDOW_WIDTH/2 + (rand()%200 - 100));
                 ps->p[i].y = (float)(WINDOW_HEIGHT - (rand()%50));
@@ -238,6 +252,26 @@ void updateParticleSystem(ParticleSystem* ps, float deltaTime) {
 void drawParticleSystem(SDL_Renderer* renderer, ParticleSystem* ps) {
     for (size_t i = 0; i < ps->count; i++)
         drawParticle(renderer, &ps->p[i]);
+}
+
+// este es solo un menu en la terminal para explicar que modos tenemos 
+void printControls(const char *exeName) {
+    printf("Simulación iniciada — Sistema de partículas\n");
+    printf("Uso: %s <numero_de_particulas>\n\n", exeName);
+
+    printf("Controles (teclado / mouse):\n");
+    printf("  1  : Modo exclusivo - GRAVEDAD\n");
+    printf("  2  : Modo exclusivo - FLOWFIELD\n");
+    printf("  3  : Modo exclusivo - FIRE\n\n");
+
+    printf("  w  : Alterna GRAVEDAD ON/OFF (combinable)\n");
+    printf("  f  : Alterna FLOWFIELD ON/OFF (combinable)\n");
+    printf("  r  : Alterna FIRE ON/OFF (combinable)\n");
+    printf("  q  : Mantén presionada para activar VIENTO desde el cursor (hold)\n");
+    printf("  e  : Explosión instantánea en la posición actual del mouse\n");
+    printf("  c  : RESETEAR la simulación manualmente \n");
+    printf("  a  : Alterna AUTO-RESPAWN ON/OFF \n");
+    printf("  ESC: Salir\n\n");
 }
 
 int main(int argc, char* argv[]) {
@@ -276,14 +310,13 @@ int main(int argc, char* argv[]) {
     SDL_Event event;
     Uint32 lastTime = SDL_GetTicks();
 
-    printf("Simulación iniciada. Teclas: 1,2,3, w,f,q(hold), e (explosion), r\n");
+    printControls(argv[0]);
 
     while (running) {
         Uint32 currentTime = SDL_GetTicks();
-        float dt = (currentTime - lastTime) / 1000.0f; // segundos reales
+        float dt = (currentTime - lastTime) / 1000.0f;
         lastTime = currentTime;
 
-        // proceso eventos
         while (SDL_PollEvent(&event)) {
             if (event.type == SDL_QUIT) running = 0;
             else if (event.type == SDL_MOUSEMOTION) {
@@ -291,6 +324,8 @@ int main(int argc, char* argv[]) {
                 mouseY = event.motion.y;
             }
             else if (event.type == SDL_KEYDOWN) {
+                if (event.key.repeat != 0) continue;
+
                 SDL_Keycode k = event.key.keysym.sym;
                 if (k == SDLK_ESCAPE) running = 0;
                 else if (k == SDLK_1) { activeForces = FORCE_GRAVITY; printf("Modo exclusivo: GRAVEDAD\n"); }
@@ -299,18 +334,26 @@ int main(int argc, char* argv[]) {
                 else if (k == SDLK_w) { activeForces ^= FORCE_GRAVITY; printf("Toggle GRAVITY -> %s\n", (activeForces & FORCE_GRAVITY) ? "ON" : "OFF"); }
                 else if (k == SDLK_f) { activeForces ^= FORCE_FLOWFIELD; printf("Toggle FLOWFIELD -> %s\n", (activeForces & FORCE_FLOWFIELD) ? "ON" : "OFF"); }
                 else if (k == SDLK_r) { activeForces ^= FORCE_FIRE; printf("Toggle FIRE -> %s\n", (activeForces & FORCE_FIRE) ? "ON" : "OFF"); }
-                else if (k == SDLK_q) { // wind hold
+                else if (k == SDLK_q) { 
                     mouseWindActive = 1;
                     activeForces |= FORCE_WIND;
                     printf("WIND ON (hold)\n");
                 }
                 else if (k == SDLK_e) {
-                    // explosion instantánea en mouse
                     triggerExplosion(ps, (float)mouseX, (float)mouseY, 1200.0f);
                     printf("Explosion en (%d,%d)\n", mouseX, mouseY);
                 }
+                else if (k == SDLK_c) { // reset manual
+                    resetSimulation(ps);
+                    printf("Simulación RESETEADA manualmente (c)\n");
+                }
+                else if (k == SDLK_a) { // toggle auto-respawn
+                    autoRespawn = !autoRespawn;
+                    printf("AUTO-RESPAWN -> %s\n", autoRespawn ? "ON" : "OFF");
+                }
             }
             else if (event.type == SDL_KEYUP) {
+                // KEYUP no repite, así que no hace falta checar repeat
                 if (event.key.keysym.sym == SDLK_q) {
                     mouseWindActive = 0;
                     activeForces &= ~FORCE_WIND;
@@ -319,16 +362,15 @@ int main(int argc, char* argv[]) {
             }
         }
 
-        float simDt = dt; 
+        float simDt = dt;
         updateParticleSystem(ps, simDt);
 
-        // Render
         SDL_SetRenderDrawColor(renderer, 0, 0, 0, 255);
         SDL_RenderClear(renderer);
         drawParticleSystem(renderer, ps);
         SDL_RenderPresent(renderer);
 
-        SDL_Delay(16); // ~60fps
+        SDL_Delay(16);
     }
 
     destroyParticleSystem(ps);
@@ -338,4 +380,3 @@ int main(int argc, char* argv[]) {
     printf("Fin.\n");
     return 0;
 }
-
