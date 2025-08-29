@@ -563,6 +563,24 @@ int main(int argc, char* argv[]) {
         return 1;
     }
     
+    int numStars = 2000;
+    RingSystem* stars = createRingSystem(numStars, 1, 0.0f, 0.0f); // radio no importa porque no usamos órbitas
+    stars->count = numStars;
+
+    for (int i = 0; i < stars->count; i++) {
+        // Distribución aleatoria en un cubo grande
+        float range = 50.0f; // cuánto se alejan del centro
+        stars->particles[i].position.x = ((float)rand() / RAND_MAX - 0.5f) * 2.0f * range;
+        stars->particles[i].position.y = ((float)rand() / RAND_MAX - 0.5f) * 2.0f * range;
+        stars->particles[i].position.z = ((float)rand() / RAND_MAX - 0.5f) * 2.0f * range;
+
+        stars->particles[i].orbitSpeed = 0.0f;        // no se mueven
+        stars->particles[i].color = (Vec3){1.0f, 1.0f, 1.0f}; // blancas
+        stars->particles[i].size = 1.0f + ((float)rand() / RAND_MAX) * 1.5f; // variar tamaño
+        stars->particles[i].life = stars->particles[i].maxLife = 1.0f; // opcional, no cambia
+    }
+
+
     // Distribuir partículas entre anillos
     rs->count = numParticles;
     int particlesPerRing = numParticles / numRings;
@@ -627,13 +645,13 @@ int main(int argc, char* argv[]) {
         // Dibujar esfera
         glBindVertexArray(VAO);
         glDrawElements(GL_TRIANGLES, sphereIndexCount, GL_UNSIGNED_INT, 0);
+       
         
-        // Cambiar a modo OpenGL legacy para partículas
+
         glUseProgram(0);
-        
-        // Configurar cámara para partículas
         setupCamera(cameraAngle, cameraHeight, cameraDistance);
-        
+        drawRingSystem(stars);
+
         // Dibujar anillos de partículas
         drawRingSystem(rs);
         
