@@ -3,27 +3,68 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <math.h>
+#include <time.h>
+#include <string.h>
 
-// Incluir stb_image para cargar texturas
 #define STB_IMAGE_IMPLEMENTATION
 #include "stb_image.h"
 
-// Estructura para vértices
+#define WINDOW_WIDTH 800
+#define WINDOW_HEIGHT 600
+#define MAX_PARTICLES 50000
+#define M_PI 3.14159265359
+
+// Estructuras matemáticas
+typedef struct {
+    float x, y, z;
+} Vec3;
+
+typedef struct {
+    float m[16];
+} Mat4;
+
+// Estructura de partícula para anillos
+typedef struct {
+    Vec3 position;
+    Vec3 velocity;
+    float orbitRadius;    // Radio de órbita desde el centro
+    float orbitAngle;     // Ángulo actual en la órbita
+    float orbitSpeed;     // Velocidad angular de órbita
+    float inclination;    // Inclinación del plano orbital
+    float verticalOffset; // Desplazamiento vertical del anillo
+    float size;           // Tamaño de la partícula
+    float life;
+    float maxLife;
+    Vec3 color;
+    int ringIndex;        // Índice del anillo al que pertenece
+} RingParticle;
+
+// Sistema de anillos
+typedef struct {
+    RingParticle* particles;
+    size_t count;
+    size_t capacity;
+    int numRings;         // Número de anillos
+    float minRadius;      // Radio mínimo de anillos
+    float maxRadius;      // Radio máximo de anillos
+} RingSystem;
+
+// Estructura para vértices de la esfera
 typedef struct {
     float x, y, z;    // Posición
     float u, v;       // Coordenadas de textura
     float nx, ny, nz; // Normales
 } Vertex;
 
-// Variables globales
+// Variables globales para la esfera
 GLuint VAO, VBO, EBO;
 GLuint shaderProgram;
 GLuint texture;
-Vertex* vertices;
-unsigned int* indices;
-int vertexCount, indexCount;
+Vertex* sphereVertices;
+unsigned int* sphereIndices;
+int sphereVertexCount, sphereIndexCount;
 
-// Código del vertex shader
+// Shaders para la esfera
 const char* vertexShaderSource = "#version 330 core\n"
     "layout (location = 0) in vec3 aPos;\n"
     "layout (location = 1) in vec2 aTexCoord;\n"
@@ -42,7 +83,6 @@ const char* vertexShaderSource = "#version 330 core\n"
     "    gl_Position = projection * view * vec4(FragPos, 1.0);\n"
     "}\0";
 
-// Código del fragment shader
 const char* fragmentShaderSource = "#version 330 core\n"
     "out vec4 FragColor;\n"
     "in vec2 TexCoord;\n"
@@ -54,48 +94,42 @@ const char* fragmentShaderSource = "#version 330 core\n"
     "uniform vec3 lightColor;\n"
     "void main()\n"
     "{\n"
-    "    // Ambient lighting\n"
-    "    float ambientStrength = 0.3;\n"
+    "    float ambientStrength = 0.4;\n"
     "    vec3 ambient = ambientStrength * lightColor;\n"
-    "    // Diffuse lighting\n"
     "    vec3 norm = normalize(Normal);\n"
     "    vec3 lightDir = normalize(lightPos - FragPos);\n"
     "    float diff = max(dot(norm, lightDir), 0.0);\n"
     "    vec3 diffuse = diff * lightColor;\n"
-    "    // Specular lighting\n"
-    "    float specularStrength = 0.5;\n"
+    "    float specularStrength = 0.3;\n"
     "    vec3 viewDir = normalize(viewPos - FragPos);\n"
     "    vec3 reflectDir = reflect(-lightDir, norm);\n"
-    "    float spec = pow(max(dot(viewDir, reflectDir), 0.0), 32);\n"
+    "    float spec = pow(max(dot(viewDir, reflectDir), 0.0), 16);\n"
     "    vec3 specular = specularStrength * spec * lightColor;\n"
     "    vec3 result = (ambient + diffuse + specular) * texture(ourTexture, TexCoord).rgb;\n"
     "    FragColor = vec4(result, 1.0);\n"
     "}\n\0";
 
-// Función para crear matriz de identidad 4x4
+// Funciones matemáticas
+Vec3 vec3_add(Vec3 a, Vec3 b) {
+    return (Vec3){a.x + b.x, a.y + b.y, a.z + b.z};
+}
+
+Vec3 vec3_scale(Vec3 v, float s) {
+    return (Vec3){v.x * s, v.y * s, v.z * s};
+}
+
+Vec3 vec3_normalize(Vec3 v) {
+    float len = sqrtf(v.x*v.x + v.y*v.y + v.z*v.z);
+    if (len > 0) return vec3_scale(v, 1.0f/len);
+    return v;
+}
+
 void mat4_identity(float* m) {
     for (int i = 0; i < 16; i++) {
         m[i] = (i % 5 == 0) ? 1.0f : 0.0f;
     }
 }
 
-// Función para multiplicar matrices 4x4
-void mat4_multiply(float* result, const float* a, const float* b) {
-    float temp[16];
-    for (int i = 0; i < 4; i++) {
-        for (int j = 0; j < 4; j++) {
-            temp[i * 4 + j] = 0;
-            for (int k = 0; k < 4; k++) {
-                temp[i * 4 + j] += a[i * 4 + k] * b[k * 4 + j];
-            }
-        }
-    }
-    for (int i = 0; i < 16; i++) {
-        result[i] = temp[i];
-    }
-}
-
-// Función para crear matriz de perspectiva
 void mat4_perspective(float* m, float fovy, float aspect, float near, float far) {
     float f = 1.0f / tanf(fovy / 2.0f);
     mat4_identity(m);
@@ -107,7 +141,6 @@ void mat4_perspective(float* m, float fovy, float aspect, float near, float far)
     m[15] = 0.0f;
 }
 
-// Función para crear matriz lookat
 void mat4_lookat(float* m, float eyeX, float eyeY, float eyeZ, 
                  float centerX, float centerY, float centerZ,
                  float upX, float upY, float upZ) {
@@ -130,7 +163,6 @@ void mat4_lookat(float* m, float eyeX, float eyeY, float eyeZ,
     m[14] = f[0]*eyeX + f[1]*eyeY + f[2]*eyeZ;
 }
 
-// Función para crear matriz de rotación
 void mat4_rotate_y(float* m, float angle) {
     mat4_identity(m);
     float c = cosf(angle);
@@ -141,16 +173,15 @@ void mat4_rotate_y(float* m, float angle) {
 
 // Generar esfera
 void generateSphere(float radius, int sectors, int stacks) {
-    vertexCount = (sectors + 1) * (stacks + 1);
-    indexCount = sectors * stacks * 6;
+    sphereVertexCount = (sectors + 1) * (stacks + 1);
+    sphereIndexCount = sectors * stacks * 6;
     
-    vertices = malloc(vertexCount * sizeof(Vertex));
-    indices = malloc(indexCount * sizeof(unsigned int));
+    sphereVertices = malloc(sphereVertexCount * sizeof(Vertex));
+    sphereIndices = malloc(sphereIndexCount * sizeof(unsigned int));
     
     float sectorStep = 2 * M_PI / sectors;
     float stackStep = M_PI / stacks;
     
-    // Generar vértices
     int vertIndex = 0;
     for (int i = 0; i <= stacks; ++i) {
         float stackAngle = M_PI / 2 - i * stackStep;
@@ -160,25 +191,21 @@ void generateSphere(float radius, int sectors, int stacks) {
         for (int j = 0; j <= sectors; ++j) {
             float sectorAngle = j * sectorStep;
             
-            // Posición
-            vertices[vertIndex].x = xy * cosf(sectorAngle);
-            vertices[vertIndex].y = xy * sinf(sectorAngle);
-            vertices[vertIndex].z = z;
+            sphereVertices[vertIndex].x = xy * cosf(sectorAngle);
+            sphereVertices[vertIndex].y = xy * sinf(sectorAngle);
+            sphereVertices[vertIndex].z = z;
             
-            // Normales
-            vertices[vertIndex].nx = vertices[vertIndex].x / radius;
-            vertices[vertIndex].ny = vertices[vertIndex].y / radius;
-            vertices[vertIndex].nz = vertices[vertIndex].z / radius;
+            sphereVertices[vertIndex].nx = sphereVertices[vertIndex].x / radius;
+            sphereVertices[vertIndex].ny = sphereVertices[vertIndex].y / radius;
+            sphereVertices[vertIndex].nz = sphereVertices[vertIndex].z / radius;
             
-            // Coordenadas de textura
-            vertices[vertIndex].u = (float)j / sectors;
-            vertices[vertIndex].v = (float)i / stacks;
+            sphereVertices[vertIndex].u = (float)j / sectors;
+            sphereVertices[vertIndex].v = (float)i / stacks;
             
             vertIndex++;
         }
     }
     
-    // Generar índices
     int indexIndex = 0;
     for (int i = 0; i < stacks; ++i) {
         int k1 = i * (sectors + 1);
@@ -186,15 +213,15 @@ void generateSphere(float radius, int sectors, int stacks) {
         
         for (int j = 0; j < sectors; ++j, ++k1, ++k2) {
             if (i != 0) {
-                indices[indexIndex++] = k1;
-                indices[indexIndex++] = k2;
-                indices[indexIndex++] = k1 + 1;
+                sphereIndices[indexIndex++] = k1;
+                sphereIndices[indexIndex++] = k2;
+                sphereIndices[indexIndex++] = k1 + 1;
             }
             
             if (i != (stacks - 1)) {
-                indices[indexIndex++] = k1 + 1;
-                indices[indexIndex++] = k2;
-                indices[indexIndex++] = k2 + 1;
+                sphereIndices[indexIndex++] = k1 + 1;
+                sphereIndices[indexIndex++] = k2;
+                sphereIndices[indexIndex++] = k2 + 1;
             }
         }
     }
@@ -248,42 +275,250 @@ unsigned int loadTexture(const char* path) {
     return textureID;
 }
 
-int main() {
+// Funciones del sistema de anillos
+RingSystem* createRingSystem(size_t capacity, int numRings, float minRadius, float maxRadius) {
+    RingSystem* rs = malloc(sizeof(RingSystem));
+    if (!rs) return NULL;
+    
+    rs->particles = malloc(sizeof(RingParticle) * capacity);
+    if (!rs->particles) {
+        free(rs);
+        return NULL;
+    }
+    
+    rs->count = 0;
+    rs->capacity = capacity;
+    rs->numRings = numRings;
+    rs->minRadius = minRadius;
+    rs->maxRadius = maxRadius;
+    return rs;
+}
+
+void destroyRingSystem(RingSystem* rs) {
+    if (rs) {
+        free(rs->particles);
+        free(rs);
+    }
+}
+
+void createRingParticle(RingParticle* p, int ringIndex, int numRings, float minRadius, float maxRadius) {
+    // Calcular radio del anillo basado en el índice
+    float ringSpacing = (maxRadius - minRadius) / (numRings > 1 ? numRings - 1 : 1);
+    float baseRadius = minRadius + ringIndex * ringSpacing;
+    
+    // Añadir variación aleatoria al radio
+    p->orbitRadius = baseRadius + ((float)rand() / RAND_MAX - 0.5f) * ringSpacing * 0.3f;
+    
+    // Ángulo inicial aleatorio
+    p->orbitAngle = ((float)rand() / RAND_MAX) * 2.0f * M_PI;
+    
+    // Velocidad orbital (más rápida para anillos internos - ley de Kepler)
+    float baseSpeed = 0.5f / sqrtf(p->orbitRadius);
+    p->orbitSpeed = baseSpeed * (0.8f + ((float)rand() / RAND_MAX) * 0.4f);
+    
+    // Inclinación del anillo (Urano tiene anillos inclinados)
+    p->inclination = ((float)rand() / RAND_MAX - 0.5f) * 0.2f; // Pequeña inclinación
+    
+    // Desplazamiento vertical para crear grosor del anillo
+    p->verticalOffset = ((float)rand() / RAND_MAX - 0.5f) * 0.1f;
+    
+    // Calcular posición inicial
+    float cosAngle = cosf(p->orbitAngle);
+    float sinAngle = sinf(p->orbitAngle);
+    
+    p->position.x = p->orbitRadius * cosAngle;
+    p->position.y = p->verticalOffset + p->orbitRadius * p->inclination * sinAngle;
+    p->position.z = p->orbitRadius * sinAngle;
+    
+    // Velocidad tangencial
+    p->velocity.x = -p->orbitRadius * p->orbitSpeed * sinAngle;
+    p->velocity.y = p->orbitRadius * p->orbitSpeed * p->inclination * cosAngle;
+    p->velocity.z = p->orbitRadius * p->orbitSpeed * cosAngle;
+    
+    // Propiedades visuales
+    p->size = 0.02f + ((float)rand() / RAND_MAX) * 0.03f;
+    p->life = p->maxLife = 5.0f + ((float)rand() / RAND_MAX) * 10.0f;
+    p->ringIndex = ringIndex;
+    
+    // Colores diferentes para cada anillo
+    switch (ringIndex % 4) {
+        case 0: // Anillo interno - azulado
+            p->color = (Vec3){0.6f, 0.8f, 1.0f};
+            break;
+        case 1: // Segundo anillo - verdoso
+            p->color = (Vec3){0.7f, 1.0f, 0.8f};
+            break;
+        case 2: // Tercer anillo - amarillento
+            p->color = (Vec3){1.0f, 1.0f, 0.7f};
+            break;
+        case 3: // Anillo externo - rojizo
+            p->color = (Vec3){1.0f, 0.8f, 0.6f};
+            break;
+    }
+}
+
+void updateRingParticle(RingParticle* p, float deltaTime) {
+    // Actualizar ángulo orbital
+    p->orbitAngle += p->orbitSpeed * deltaTime;
+    if (p->orbitAngle > 2.0f * M_PI) {
+        p->orbitAngle -= 2.0f * M_PI;
+    }
+    
+    // Calcular nueva posición orbital
+    float cosAngle = cosf(p->orbitAngle);
+    float sinAngle = sinf(p->orbitAngle);
+    
+    p->position.x = p->orbitRadius * cosAngle;
+    p->position.y = p->verticalOffset + p->orbitRadius * p->inclination * sinAngle;
+    p->position.z = p->orbitRadius * sinAngle;
+    
+    // Actualizar velocidad tangencial
+    p->velocity.x = -p->orbitRadius * p->orbitSpeed * sinAngle;
+    p->velocity.y = p->orbitRadius * p->orbitSpeed * p->inclination * cosAngle;
+    p->velocity.z = p->orbitRadius * p->orbitSpeed * cosAngle;
+    
+    // Actualizar vida
+    p->life -= deltaTime;
+}
+
+void updateRingSystem(RingSystem* rs, float deltaTime) {
+    for (size_t i = 0; i < rs->count; i++) {
+        updateRingParticle(&rs->particles[i], deltaTime);
+        
+        // Regenerar partícula si "murió"
+        if (rs->particles[i].life <= 0) {
+            int ringIndex = rs->particles[i].ringIndex;
+            createRingParticle(&rs->particles[i], ringIndex, rs->numRings, rs->minRadius, rs->maxRadius);
+        }
+    }
+}
+
+void drawRingSystem(RingSystem* rs) {
+    glEnable(GL_POINT_SMOOTH);
+    glEnable(GL_BLEND);
+    glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+    
+    glPointSize(2.0f);
+    
+    glBegin(GL_POINTS);
+    for (size_t i = 0; i < rs->count; i++) {
+        RingParticle* p = &rs->particles[i];
+        if (p->life > 0) {
+            float alpha = (p->life / p->maxLife) * 0.8f;
+            glColor4f(p->color.x, p->color.y, p->color.z, alpha);
+            glVertex3f(p->position.x, p->position.y, p->position.z);
+        }
+    }
+    glEnd();
+    
+    glDisable(GL_POINT_SMOOTH);
+}
+
+void setupCamera(float cameraAngle, float cameraHeight, float cameraDistance) {
+    glMatrixMode(GL_PROJECTION);
+    glLoadIdentity();
+    
+    float aspect = (float)WINDOW_WIDTH / WINDOW_HEIGHT;
+    float fov = 45.0f;
+    float near = 0.1f;
+    float far = 100.0f;
+    
+    float top = near * tanf(fov * M_PI / 360.0f);
+    float bottom = -top;
+    float right = top * aspect;
+    float left = -right;
+    
+    glFrustum(left, right, bottom, top, near, far);
+    
+    glMatrixMode(GL_MODELVIEW);
+    glLoadIdentity();
+    
+    float camX = cameraDistance * cosf(cameraAngle);
+    float camY = cameraHeight;
+    float camZ = cameraDistance * sinf(cameraAngle);
+    
+    Vec3 eye = {camX, camY, camZ};
+    Vec3 center = {0.0f, 0.0f, 0.0f};
+    Vec3 up = {0.0f, 1.0f, 0.0f};
+    
+    Vec3 f = vec3_normalize((Vec3){center.x - eye.x, center.y - eye.y, center.z - eye.z});
+    Vec3 s = vec3_normalize((Vec3){f.y*up.z - f.z*up.y, f.z*up.x - f.x*up.z, f.x*up.y - f.y*up.x});
+    Vec3 u = (Vec3){s.y*f.z - s.z*f.y, s.z*f.x - s.x*f.z, s.x*f.y - s.y*f.x};
+    
+    float m[16] = {
+        s.x, u.x, -f.x, 0,
+        s.y, u.y, -f.y, 0,
+        s.z, u.z, -f.z, 0,
+        -(s.x*eye.x + s.y*eye.y + s.z*eye.z),
+        -(u.x*eye.x + u.y*eye.y + u.z*eye.z),
+        f.x*eye.x + f.y*eye.y + f.z*eye.z,
+        1
+    };
+    
+    glMultMatrixf(m);
+}
+
+void key_callback(GLFWwindow* window, int key, int scancode, int action, int mods) {
+    if (key == GLFW_KEY_ESCAPE && action == GLFW_PRESS) {
+        glfwSetWindowShouldClose(window, GLFW_TRUE);
+    }
+}
+
+int main(int argc, char* argv[]) {
+    if (argc != 2) {
+        printf("Uso: %s <numero_de_particulas>\n", argv[0]);
+        printf("Ejemplo: %s 5000\n", argv[0]);
+        return 1;
+    }
+    
+    int numParticles = atoi(argv[1]);
+    if (numParticles <= 0) {
+        printf("Error: Número de partículas debe ser mayor que 0\n");
+        return 1;
+    }
+    
+    printf("Creando sistema de anillos de Urano con %d partículas...\n", numParticles);
+    
     // Inicializar GLFW
     if (!glfwInit()) {
-        printf("Error inicializando GLFW\n");
-        return -1;
+        printf("Error al inicializar GLFW\n");
+        return 1;
     }
     
-    // Configurar GLFW
     glfwWindowHint(GLFW_CONTEXT_VERSION_MAJOR, 3);
     glfwWindowHint(GLFW_CONTEXT_VERSION_MINOR, 3);
-    glfwWindowHint(GLFW_OPENGL_PROFILE, GLFW_OPENGL_CORE_PROFILE);
+    glfwWindowHint(GLFW_OPENGL_PROFILE, GLFW_OPENGL_COMPAT_PROFILE);
     
-    // Crear ventana
-    GLFWwindow* window = glfwCreateWindow(800, 600, "Esfera de Urano", NULL, NULL);
-    if (window == NULL) {
-        printf("Error creando ventana\n");
+    GLFWwindow* window = glfwCreateWindow(WINDOW_WIDTH, WINDOW_HEIGHT,
+                                          "Anillos de Urano - Sistema de Partículas", NULL, NULL);
+    if (!window) {
+        printf("Error al crear ventana\n");
         glfwTerminate();
-        return -1;
+        return 1;
     }
+    
     glfwMakeContextCurrent(window);
+    glfwSetKeyCallback(window, key_callback);
+    glfwSwapInterval(1);
     
-    // Inicializar GLEW
     if (glewInit() != GLEW_OK) {
-        printf("Error inicializando GLEW\n");
-        return -1;
+        printf("Error al inicializar GLEW\n");
+        glfwDestroyWindow(window);
+        glfwTerminate();
+        return 1;
     }
     
-    // Configurar viewport
-    glViewport(0, 0, 800, 600);
+    // Configurar OpenGL
     glEnable(GL_DEPTH_TEST);
+    glEnable(GL_BLEND);
+    glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+    glClearColor(0.0f, 0.0f, 0.0f, 1.0f);
+    glViewport(0, 0, WINDOW_WIDTH, WINDOW_HEIGHT);
     
-    // Compilar shaders
+    // Configurar esfera
     unsigned int vertexShader = compileShader(vertexShaderSource, GL_VERTEX_SHADER);
     unsigned int fragmentShader = compileShader(fragmentShaderSource, GL_FRAGMENT_SHADER);
     
-    // Crear programa de shader
     shaderProgram = glCreateProgram();
     glAttachShader(shaderProgram, vertexShader);
     glAttachShader(shaderProgram, fragmentShader);
@@ -292,64 +527,96 @@ int main() {
     glDeleteShader(vertexShader);
     glDeleteShader(fragmentShader);
     
-    // Generar esfera
-    generateSphere(0.5f, 50, 50);
+    float sphereRadius = 0.5f;
+    generateSphere(sphereRadius, 50, 50);
     
-    // Crear VAO, VBO, EBO
     glGenVertexArrays(1, &VAO);
     glGenBuffers(1, &VBO);
     glGenBuffers(1, &EBO);
     
     glBindVertexArray(VAO);
-    
     glBindBuffer(GL_ARRAY_BUFFER, VBO);
-    glBufferData(GL_ARRAY_BUFFER, vertexCount * sizeof(Vertex), vertices, GL_STATIC_DRAW);
+    glBufferData(GL_ARRAY_BUFFER, sphereVertexCount * sizeof(Vertex), sphereVertices, GL_STATIC_DRAW);
     
     glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, EBO);
-    glBufferData(GL_ELEMENT_ARRAY_BUFFER, indexCount * sizeof(unsigned int), indices, GL_STATIC_DRAW);
+    glBufferData(GL_ELEMENT_ARRAY_BUFFER, sphereIndexCount * sizeof(unsigned int), sphereIndices, GL_STATIC_DRAW);
     
-    // Configurar atributos de vértice
-    // Posición
     glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, sizeof(Vertex), (void*)0);
     glEnableVertexAttribArray(0);
-    // Coordenadas de textura
     glVertexAttribPointer(1, 2, GL_FLOAT, GL_FALSE, sizeof(Vertex), (void*)(3 * sizeof(float)));
     glEnableVertexAttribArray(1);
-    // Normales
     glVertexAttribPointer(2, 3, GL_FLOAT, GL_FALSE, sizeof(Vertex), (void*)(5 * sizeof(float)));
     glEnableVertexAttribArray(2);
     
-    // Cargar textura
     texture = loadTexture("2k_uranus.jpg");
     
-    // Loop principal
-    float angle = 0.0f;
-    while (!glfwWindowShouldClose(window)) {
-        // Input
-        if (glfwGetKey(window, GLFW_KEY_ESCAPE) == GLFW_PRESS)
-            glfwSetWindowShouldClose(window, 1);
+    srand((unsigned int)time(NULL));
+    
+    // Crear sistema de anillos
+    int numRings = 1;  // Número de anillos
+    float minRadius = 1.0f;  // Radio mínimo (después de la superficie del planeta)
+    float maxRadius = 4.0f;  // Radio máximo
+    
+    RingSystem* rs = createRingSystem(numParticles, numRings, minRadius, maxRadius);
+    if (!rs) {
+        printf("Error al crear sistema de anillos\n");
+        return 1;
+    }
+    
+    // Distribuir partículas entre anillos
+    rs->count = numParticles;
+    int particlesPerRing = numParticles / numRings;
+    
+    for (int i = 0; i < numParticles; i++) {
+        int ringIndex = i / particlesPerRing;
+        if (ringIndex >= numRings) ringIndex = numRings - 1;
         
-        // Render
-        glClearColor(0.0f, 0.0f, 0.1f, 1.0f);
+        createRingParticle(&rs->particles[i], ringIndex, numRings, minRadius, maxRadius);
+    }
+    
+    printf("Sistema iniciado con %d anillos. Usa ESC para salir.\n", numRings);
+    
+    // Variables de control
+    double lastTime = glfwGetTime();
+    double cameraAngle = 0.0;
+    double planetRotation = 0.0;
+    int frameCount = 0;
+    float cameraHeight = 2.0f;
+    float cameraDistance = 8.0f;
+    
+    // Bucle principal
+    while (!glfwWindowShouldClose(window)) {
+        double currentTime = glfwGetTime();
+        float deltaTime = (float)(currentTime - lastTime);
+        lastTime = currentTime;
+        
+        // Actualizar sistema de anillos
+        updateRingSystem(rs, deltaTime);
+        
+        // Rotar cámara y planeta
+        cameraAngle += deltaTime * 0.2;
+        planetRotation += deltaTime * 0.5;
+        
         glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
         
+        // Dibujar esfera de Urano
         glUseProgram(shaderProgram);
         
-        // Matrices de transformación
         float model[16], view[16], projection[16];
         
-        mat4_rotate_y(model, angle);
-        mat4_lookat(view, 0.0f, 0.0f, 3.0f, 0.0f, 0.0f, 0.0f, 0.0f, 1.0f, 0.0f);
-        mat4_perspective(projection, M_PI/4.0f, 800.0f/600.0f, 0.1f, 100.0f);
+        mat4_rotate_y(model, planetRotation);
+        mat4_lookat(view, cameraDistance * cosf(cameraAngle), cameraHeight, cameraDistance * sinf(cameraAngle),
+                    0.0f, 0.0f, 0.0f, 0.0f, 1.0f, 0.0f);
+        mat4_perspective(projection, M_PI/4.0f, (float)WINDOW_WIDTH/(float)WINDOW_HEIGHT, 0.1f, 100.0f);
         
-        // Enviar matrices a los shaders
         glUniformMatrix4fv(glGetUniformLocation(shaderProgram, "model"), 1, GL_FALSE, model);
         glUniformMatrix4fv(glGetUniformLocation(shaderProgram, "view"), 1, GL_FALSE, view);
         glUniformMatrix4fv(glGetUniformLocation(shaderProgram, "projection"), 1, GL_FALSE, projection);
         
         // Configurar iluminación
-        glUniform3f(glGetUniformLocation(shaderProgram, "lightPos"), 2.0f, 2.0f, 2.0f);
-        glUniform3f(glGetUniformLocation(shaderProgram, "viewPos"), 0.0f, 0.0f, 3.0f);
+        glUniform3f(glGetUniformLocation(shaderProgram, "lightPos"), 5.0f, 5.0f, 5.0f);
+        glUniform3f(glGetUniformLocation(shaderProgram, "viewPos"), 
+                    cameraDistance * cosf(cameraAngle), cameraHeight, cameraDistance * sinf(cameraAngle));
         glUniform3f(glGetUniformLocation(shaderProgram, "lightColor"), 1.0f, 1.0f, 1.0f);
         
         // Activar textura
@@ -359,24 +626,41 @@ int main() {
         
         // Dibujar esfera
         glBindVertexArray(VAO);
-        glDrawElements(GL_TRIANGLES, indexCount, GL_UNSIGNED_INT, 0);
+        glDrawElements(GL_TRIANGLES, sphereIndexCount, GL_UNSIGNED_INT, 0);
         
-        // Incrementar ángulo para rotación
-        angle += 0.01f;
+        // Cambiar a modo OpenGL legacy para partículas
+        glUseProgram(0);
+        
+        // Configurar cámara para partículas
+        setupCamera(cameraAngle, cameraHeight, cameraDistance);
+        
+        // Dibujar anillos de partículas
+        drawRingSystem(rs);
         
         glfwSwapBuffers(window);
         glfwPollEvents();
+        
+        // Debug info cada 60 frames
+        frameCount++;
+        if (frameCount % 60 == 0) {
+            printf("Frame %d - FPS: %.1f - Partículas: %zu - Anillos: %d\n", 
+                   frameCount, 1.0f / deltaTime, rs->count, numRings);
+        }
     }
     
-    // Limpiar recursos
-    free(vertices);
-    free(indices);
+    // Limpieza
+    destroyRingSystem(rs);
+    free(sphereVertices);
+    free(sphereIndices);
     glDeleteVertexArrays(1, &VAO);
     glDeleteBuffers(1, &VBO);
     glDeleteBuffers(1, &EBO);
     glDeleteProgram(shaderProgram);
     glDeleteTextures(1, &texture);
     
+    glfwDestroyWindow(window);
     glfwTerminate();
+    
+    printf("Simulación terminada.\n");
     return 0;
 }
