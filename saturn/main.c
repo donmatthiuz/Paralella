@@ -304,7 +304,7 @@ void destroyRingSystem(RingSystem* rs) {
 void createRingParticle(RingParticle* p, int ringIndex, int numRings, float minRadius, float maxRadius) {
     // Calcular radio del anillo basado en el índice
     float ringSpacing = (maxRadius - minRadius) / (numRings > 1 ? numRings - 1 : 1);
-    float baseRadius = minRadius + ringIndex * ringSpacing;
+    float baseRadius = minRadius + 0.4 + ringIndex * ringSpacing;
     
     // Añadir variación aleatoria al radio
     p->orbitRadius = baseRadius + ((float)rand() / RAND_MAX - 0.5f) * ringSpacing * 0.3f;
@@ -343,7 +343,7 @@ void createRingParticle(RingParticle* p, int ringIndex, int numRings, float minR
     // Colores diferentes para cada anillo
     switch (ringIndex % 4) {
         case 0: // Anillo interno - azulado
-            p->color = (Vec3){0.6f, 0.8f, 1.0f};
+            p->color = (Vec3){1.0f, 1.0f, 1.0f};
             break;
         case 1: // Segundo anillo - verdoso
             p->color = (Vec3){0.7f, 1.0f, 0.8f};
@@ -548,7 +548,7 @@ int main(int argc, char* argv[]) {
     glVertexAttribPointer(2, 3, GL_FLOAT, GL_FALSE, sizeof(Vertex), (void*)(5 * sizeof(float)));
     glEnableVertexAttribArray(2);
     
-    texture = loadTexture("2k_uranus.jpg");
+    texture = loadTexture("87614c592cfb5e9d369fdde536263e2b.jpg");
     
     srand((unsigned int)time(NULL));
     
