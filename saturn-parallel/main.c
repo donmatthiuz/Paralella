@@ -332,10 +332,19 @@ RingSystem* createRingSystem(size_t capacity, int numRings, float minRadius, flo
 }
 
 void destroyRingSystem(RingSystem* rs) {
-    if (rs) {
-        free(rs->particles);
-        free(rs);
+    if (!rs) return;
+
+	if (rs->hotData){
+        free(rs->hotData);
+		rs->hotData = NULL;
     }
+	if (rs->coldData){
+        free(rs->coldData);
+		rs->coldData = NULL;
+    }
+	rs->count = 0;
+	rs->capacity= 0;
+
 }
 
 void createRingParticle(HotParticleData* hot, ColdParticleData* cold, int ringIndex, int numRings, float minRadius, float maxRadius, TrigTable* trigTable){
@@ -430,7 +439,7 @@ void updateRingSystem(RingSystem* rs, float deltaTime, TrigTable* trigTable) {
     regenerateDeadParticles(rs, trigTable);
 }
 
-void regenerateDeadParticles(OptimizedRingSystem* rs, TrigTable* trigTable) {
+void regenerateDeadParticles(RingSystem* rs, TrigTable* trigTable) {
     // busca y encontruenta particulas muertas en paralelo
     int* deadIndices = malloc(rs->count * sizeof(int));
     int deadCount = 0;
