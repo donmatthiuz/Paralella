@@ -10,8 +10,8 @@
 #define STB_IMAGE_IMPLEMENTATION
 #include "stb_image.h"
 
-#define WINDOW_WIDTH 1920 
-#define WINDOW_HEIGHT 1080 
+#define WINDOW_WIDTH 800 
+#define WINDOW_HEIGHT 600
 #define MAX_PARTICLES 50000
 #define M_PI 3.14159265359
 
@@ -207,6 +207,10 @@ TrigTable* createTrigTable(int size) {
     return table;
 }
 
+unsigned int rand_r(unsigned int *seed) {
+    *seed = *seed * 1103515245 + 12345;
+    return (*seed / 65536) % 32768;
+}
 // Generar esfera
 void generateSphere(float radius, int sectors, int stacks) {
     sphereVertexCount = (sectors + 1) * (stacks + 1);
@@ -383,6 +387,21 @@ void createRingParticle(HotParticleData* hot, ColdParticleData* cold, int ringIn
     cold->size = 0.02f + (rand_r(&seed) / (float)RAND_MAX) * 0.03f;
     hot->life = cold->maxLife = 5.0f + (rand_r(&seed) / (float)RAND_MAX) * 10.0f;
     cold->ringIndex = ringIndex;
+
+    switch (ringIndex % 4){
+        case 0:
+            cold->color = (Vec3){1.0f, 1.0f, 1.0f};
+            break;
+        case 1:
+            cold->color = (Vec3){0.7f, 1.0f, 0.8f};
+            break;
+        case 2:
+            cold->color = (Vec3){1.0f, 1.0f, 0.7f};
+            break;
+        case 3:
+            cold->color = (Vec3){1.0f, 0.8f, 0.6f};
+            break;
+    }
 }
 
 void updateRingParticle(HotParticleData* hot, ColdParticleData* cold, float deltaTime, TrigTable* trigTable) {
@@ -830,6 +849,9 @@ int main(int argc, char* argv[]) {
         glfwPollEvents();
 
         */
+
+        glfwSwapBuffers(window);
+        glfwPollEvents();
         
         // Debug info cada 60 frames
         frameCount++;
