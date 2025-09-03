@@ -806,11 +806,11 @@ int main(int argc, char* argv[]) {
         // Usamos la vieja función setupCamera para la vista en fixed pipeline (mantener)
         setupCamera(cameraAngle, cameraHeight, cameraDistance);
 
-        drawRingSystem(stars);
+        //drawRingSystem(stars);
 
-        drawRingSystem(rs);
+        //drawRingSystem(rs);
 
-        /*
+        
         // Dibujar estrellas (puntos) directamente usando hotData (evitamos dependencias de estructuras antiguas)
         glEnable(GL_POINT_SMOOTH);
         glEnable(GL_BLEND);
@@ -848,10 +848,10 @@ int main(int argc, char* argv[]) {
         glfwSwapBuffers(window);
         glfwPollEvents();
 
-        */
+        
 
-        glfwSwapBuffers(window);
-        glfwPollEvents();
+        //glfwSwapBuffers(window);
+        //glfwPollEvents();
         
         // Debug info cada 60 frames
         frameCount++;
