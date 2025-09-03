@@ -366,7 +366,7 @@ void createRingParticle(HotParticleData* hot, ColdParticleData* cold, int ringIn
     
     hot->orbitAngle = (rand_r(&seed) / (float)RAND_MAX) * 2.0f * M_PI;
     
-    cold->orbitSpeed = 0.5f * rsqrtf(cold->orbitRadius) * 
+    cold->orbitSpeed = 0.5f * sqrtf(cold->orbitRadius) * 
                        (0.8f + (rand_r(&seed) / (float)RAND_MAX) * 0.4f);
     
     int angleIndex = (int)(hot->orbitAngle / trigTable->angleStep) % trigTable->tableSize;
@@ -653,7 +653,7 @@ int main(int argc, char* argv[]) {
     srand((unsigned int)time(NULL));
     
     // Crear tabla trigonométrica para acelerar seno/coseno (usa la función ya definida)
-    TrigTable* trigTable = createTrigTable(8192); // tamaño razonable, puedes ajustarlo
+    TrigTable* trigTable = createTrigTable(8192);
 
     // Crear sistema de anillos (usando las nuevas hotData / coldData directamente)
     int numRings = 1;  // Número de anillos
@@ -787,6 +787,11 @@ int main(int argc, char* argv[]) {
         // Usamos la vieja función setupCamera para la vista en fixed pipeline (mantener)
         setupCamera(cameraAngle, cameraHeight, cameraDistance);
 
+        drawRingSystem(stars);
+
+        drawRingSystem(rs);
+
+        /*
         // Dibujar estrellas (puntos) directamente usando hotData (evitamos dependencias de estructuras antiguas)
         glEnable(GL_POINT_SMOOTH);
         glEnable(GL_BLEND);
@@ -823,6 +828,8 @@ int main(int argc, char* argv[]) {
         
         glfwSwapBuffers(window);
         glfwPollEvents();
+
+        */
         
         // Debug info cada 60 frames
         frameCount++;
