@@ -316,13 +316,20 @@ unsigned int loadTexture(const char* path) {
 RingSystem* createRingSystem(size_t capacity, int numRings, float minRadius, float maxRadius) {
     RingSystem* rs = malloc(sizeof(RingSystem));
     if (!rs) return NULL;
-    
-    rs->particles = malloc(sizeof(RingParticle) * capacity);
-    if (!rs->particles) {
+
+    rs->hotData = malloc(sizeof(HotParticleData) * capacity);
+    if (!rs->hotData) {
         free(rs);
         return NULL;
     }
-    
+
+    rs->coldData = malloc(sizeof(ColdParticleData) * capacity);
+    if (!rs->coldData) {
+        free(rs->hotData);
+        free(rs);
+        return NULL;
+    }
+
     rs->count = 0;
     rs->capacity = capacity;
     rs->numRings = numRings;
@@ -378,87 +385,82 @@ void createRingParticle(HotParticleData* hot, ColdParticleData* cold, int ringIn
     cold->ringIndex = ringIndex;
 }
 
-void updateRingParticle(RingParticle* p, float deltaTime) {
-    // Actualizar ángulo orbital
-    p->orbitAngle += p->orbitSpeed * deltaTime;
-    if (p->orbitAngle > 2.0f * M_PI) {
-        p->orbitAngle -= 2.0f * M_PI;
+void updateRingParticle(HotParticleData* hot, ColdParticleData* cold, float deltaTime, TrigTable* trigTable) {
+    hot->orbitAngle += cold->orbitSpeed * deltaTime;
+    if (hot->orbitAngle > 2.0f * M_PI) {
+        hot->orbitAngle -= 2.0f * M_PI;
     }
-    
-    // Calcular nueva posición orbital
-    float cosAngle = cosf(p->orbitAngle);
-    float sinAngle = sinf(p->orbitAngle);
-    
-    p->position.x = p->orbitRadius * cosAngle;
-    p->position.y = p->verticalOffset + p->orbitRadius * p->inclination * sinAngle;
-    p->position.z = p->orbitRadius * sinAngle;
-    
-    // Actualizar velocidad tangencial
-    p->velocity.x = -p->orbitRadius * p->orbitSpeed * sinAngle;
-    p->velocity.y = p->orbitRadius * p->orbitSpeed * p->inclination * cosAngle;
-    p->velocity.z = p->orbitRadius * p->orbitSpeed * cosAngle;
-    
-    // Actualizar vida
-    p->life -= deltaTime;
+
+    int angleIndex = (int)(hot->orbitAngle / trigTable->angleStep) % trigTable->tableSize;
+    float cosAngle = trigTable->cosTable[angleIndex];
+    float sinAngle = trigTable->sinTable[angleIndex];
+
+    hot->position.x = cold->orbitRadius * cosAngle;
+    hot->position.y = cold->verticalOffset + cold->orbitRadius * cold->inclination * sinAngle;
+    hot->position.z = cold->orbitRadius * sinAngle;
+
+    hot->velocity.x = -cold->orbitRadius * cold->orbitSpeed * sinAngle;
+    hot->velocity.y = cold->orbitRadius * cold->orbitSpeed * cold->inclination * cosAngle;
+    hot->velocity.z = cold->orbitRadius * cold->orbitSpeed * cosAngle;
+
+    hot->life -= deltaTime;
 }
+
+// si alguien lo limpia, mueva las funciones con el orden requerido
+void regenerateDeadParticles(RingSystem* rs, TrigTable* trigTable);
+void updateRingParticle(HotParticleData* hot, ColdParticleData* cold, float deltaTime, TrigTable* trigTable);
 
 // se aplica la funcion trigtable [la que esta paralelizada] al sistema de actualizacion de anillos
 void updateRingSystem(RingSystem* rs, float deltaTime, TrigTable* trigTable) {
-	const int numThreads = omp_get_max_threads();
-    
-    // paralelizacion por bloques 
+    const int numThreads = omp_get_max_threads();
+
     #pragma omp parallel for schedule(static) num_threads(numThreads)
     for (size_t i = 0; i < rs->count; i++) {
         HotParticleData* hot = &rs->hotData[i];
         ColdParticleData* cold = &rs->coldData[i];
-        
-        // angulo orbital
+
         hot->orbitAngle += cold->orbitSpeed * deltaTime;
         if (hot->orbitAngle > 2.0f * M_PI) {
             hot->orbitAngle -= 2.0f * M_PI;
         }
-        
-        // se usa la tabla trigonometrica para evitar calculos costosos
+
         int angleIndex = (int)(hot->orbitAngle / trigTable->angleStep) % trigTable->tableSize;
         float cosAngle = trigTable->cosTable[angleIndex];
         float sinAngle = trigTable->sinTable[angleIndex];
-        
-        // luego se calcula la nueva posicion orbital
+
         hot->position.x = cold->orbitRadius * cosAngle;
         hot->position.y = cold->verticalOffset + cold->orbitRadius * cold->inclination * sinAngle;
         hot->position.z = cold->orbitRadius * sinAngle;
-        
-        // vel tangencial 
+
         hot->velocity.x = -cold->orbitRadius * cold->orbitSpeed * sinAngle;
         hot->velocity.y = cold->orbitRadius * cold->orbitSpeed * cold->inclination * cosAngle;
         hot->velocity.z = cold->orbitRadius * cold->orbitSpeed * cosAngle;
-        
+
         hot->life -= deltaTime;
     }
-    
+
     regenerateDeadParticles(rs, trigTable);
 }
 
 void regenerateDeadParticles(RingSystem* rs, TrigTable* trigTable) {
-    // busca y encontruenta particulas muertas en paralelo
-    int* deadIndices = malloc(rs->count * sizeof(int));
-    int deadCount = 0;
-    
+    size_t* deadIndices = malloc(rs->count * sizeof(size_t));
+    size_t deadCount = 0;
+
     #pragma omp parallel
     {
-        int localDeadIndices[1024]; 
-        int localDeadCount = 0;
-        
+        size_t localDeadIndices[1024];
+        size_t localDeadCount = 0;
+
         #pragma omp for nowait
         for (size_t i = 0; i < rs->count; i++) {
             if (rs->hotData[i].life <= 0) {
                 localDeadIndices[localDeadCount++] = i;
-                
+
                 if (localDeadCount >= 1024) {
                     #pragma omp critical
                     {
-                        memcpy(&deadIndices[deadCount], localDeadIndices, 
-                               localDeadCount * sizeof(int));
+                        memcpy(&deadIndices[deadCount], localDeadIndices,
+                               localDeadCount * sizeof(size_t));
                         deadCount += localDeadCount;
                     }
                     localDeadCount = 0;
@@ -468,21 +470,21 @@ void regenerateDeadParticles(RingSystem* rs, TrigTable* trigTable) {
         if (localDeadCount > 0) {
             #pragma omp critical
             {
-                memcpy(&deadIndices[deadCount], localDeadIndices, 
-                       localDeadCount * sizeof(int));
+                memcpy(&deadIndices[deadCount], localDeadIndices,
+                       localDeadCount * sizeof(size_t));
                 deadCount += localDeadCount;
             }
         }
     }
-    
+
     #pragma omp parallel for
-    for (int i = 0; i < deadCount; i++) {
-        int idx = deadIndices[i];
-        createRingParticleOptimized(&rs->hotData[idx], &rs->coldData[idx], 
-                                   rs->coldData[idx].ringIndex, rs->numRings, 
-                                   rs->minRadius, rs->maxRadius, trigTable);
+    for (size_t i = 0; i < deadCount; i++) {
+        size_t idx = deadIndices[i];
+        createRingParticle(&rs->hotData[idx], &rs->coldData[idx],
+                                    rs->coldData[idx].ringIndex, rs->numRings,
+                                    rs->minRadius, rs->maxRadius, trigTable);
     }
-    
+
     free(deadIndices);
 }
 
@@ -490,20 +492,21 @@ void drawRingSystem(RingSystem* rs) {
     glEnable(GL_POINT_SMOOTH);
     glEnable(GL_BLEND);
     glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
-    
+
     glPointSize(2.0f);
-    
+
     glBegin(GL_POINTS);
     for (size_t i = 0; i < rs->count; i++) {
-        RingParticle* p = &rs->particles[i];
-        if (p->life > 0) {
-            float alpha = (p->life / p->maxLife) * 0.8f;
-            glColor4f(p->color.x, p->color.y, p->color.z, alpha);
-            glVertex3f(p->position.x, p->position.y, p->position.z);
+        HotParticleData* hot = &rs->hotData[i];
+        ColdParticleData* cold = &rs->coldData[i];
+        if (hot->life > 0.0f) {
+            float alpha = (hot->life / cold->maxLife) * 0.8f;
+            glColor4f(cold->color.x, cold->color.y, cold->color.z, alpha);
+            glVertex3f(hot->position.x, hot->position.y, hot->position.z);
         }
     }
     glEnd();
-    
+
     glDisable(GL_POINT_SMOOTH);
 }
 
