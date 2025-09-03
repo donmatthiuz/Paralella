@@ -3,6 +3,8 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <math.h>
+#include <omp.h>
+
 #include <time.h>
 #include <string.h>
 
@@ -125,6 +127,7 @@ Vec3 vec3_normalize(Vec3 v) {
 }
 
 void mat4_identity(float* m) {
+    #pragma omp parallel for
     for (int i = 0; i < 16; i++) {
         m[i] = (i % 5 == 0) ? 1.0f : 0.0f;
     }
@@ -183,48 +186,59 @@ void generateSphere(float radius, int sectors, int stacks) {
     float stackStep = M_PI / stacks;
     
     int vertIndex = 0;
+    #pragma omp parallel for collapse(2)
     for (int i = 0; i <= stacks; ++i) {
-        float stackAngle = M_PI / 2 - i * stackStep;
-        float xy = radius * cosf(stackAngle);
-        float z = radius * sinf(stackAngle);
-        
         for (int j = 0; j <= sectors; ++j) {
+            int vertIndex = i * (sectors + 1) + j;  // índice único por vértice
+
+            float stackAngle = M_PI / 2 - i * stackStep;
+            float xy = radius * cosf(stackAngle);
+            float z = radius * sinf(stackAngle);
             float sectorAngle = j * sectorStep;
-            
+
             sphereVertices[vertIndex].x = xy * cosf(sectorAngle);
             sphereVertices[vertIndex].y = xy * sinf(sectorAngle);
             sphereVertices[vertIndex].z = z;
-            
+
             sphereVertices[vertIndex].nx = sphereVertices[vertIndex].x / radius;
             sphereVertices[vertIndex].ny = sphereVertices[vertIndex].y / radius;
             sphereVertices[vertIndex].nz = sphereVertices[vertIndex].z / radius;
-            
+
             sphereVertices[vertIndex].u = (float)j / sectors;
             sphereVertices[vertIndex].v = (float)i / stacks;
-            
-            vertIndex++;
         }
     }
+
     
     int indexIndex = 0;
+    #pragma omp parallel
+{
+    int localIndex;
+    #pragma omp for
     for (int i = 0; i < stacks; ++i) {
         int k1 = i * (sectors + 1);
         int k2 = k1 + sectors + 1;
-        
+
         for (int j = 0; j < sectors; ++j, ++k1, ++k2) {
+            // Calculamos localIndex único por triángulo
+            // Cada triángulo tiene 3 índices, así que podemos hacer:
+            localIndex = 6 * (i * sectors + j);
+
             if (i != 0) {
-                sphereIndices[indexIndex++] = k1;
-                sphereIndices[indexIndex++] = k2;
-                sphereIndices[indexIndex++] = k1 + 1;
+                sphereIndices[localIndex + 0] = k1;
+                sphereIndices[localIndex + 1] = k2;
+                sphereIndices[localIndex + 2] = k1 + 1;
             }
-            
+
             if (i != (stacks - 1)) {
-                sphereIndices[indexIndex++] = k1 + 1;
-                sphereIndices[indexIndex++] = k2;
-                sphereIndices[indexIndex++] = k2 + 1;
+                sphereIndices[localIndex + 3] = k1 + 1;
+                sphereIndices[localIndex + 4] = k2;
+                sphereIndices[localIndex + 5] = k2 + 1;
             }
         }
     }
+}
+
 }
 
 // Compilar shader
@@ -382,6 +396,7 @@ void updateRingParticle(RingParticle* p, float deltaTime) {
 }
 
 void updateRingSystem(RingSystem* rs, float deltaTime) {
+    #pragma omp parallel for
     for (size_t i = 0; i < rs->count; i++) {
         updateRingParticle(&rs->particles[i], deltaTime);
         
@@ -401,6 +416,8 @@ void drawRingSystem(RingSystem* rs) {
     glPointSize(2.0f);
     
     glBegin(GL_POINTS);
+    #pragma omp parallel for
+
     for (size_t i = 0; i < rs->count; i++) {
         RingParticle* p = &rs->particles[i];
         if (p->life > 0) {
@@ -567,6 +584,7 @@ int main(int argc, char* argv[]) {
     RingSystem* stars = createRingSystem(numStars, 1, 0.0f, 0.0f); // radio no importa porque no usamos órbitas
     stars->count = numStars;
 
+    #pragma omp parallel for
     for (int i = 0; i < stars->count; i++) {
         // Distribución aleatoria en un cubo grande
         float range = 50.0f; // cuánto se alejan del centro
@@ -585,6 +603,8 @@ int main(int argc, char* argv[]) {
     rs->count = numParticles;
     int particlesPerRing = numParticles / numRings;
     
+    #pragma omp parallel for
+
     for (int i = 0; i < numParticles; i++) {
         int ringIndex = i / particlesPerRing;
         if (ringIndex >= numRings) ringIndex = numRings - 1;
