@@ -10,8 +10,8 @@
 #define STB_IMAGE_IMPLEMENTATION
 #include "stb_image.h"
 
-#define WINDOW_WIDTH 800
-#define WINDOW_HEIGHT 600
+#define WINDOW_WIDTH 1200
+#define WINDOW_HEIGHT 800
 #define MAX_PARTICLES 50000
 #define M_PI 3.14159265359
 
@@ -50,7 +50,6 @@ typedef struct {
     float minRadius;      // Radio mínimo de anillos
     float maxRadius;      // Radio máximo de anillos
 
-    // === NUEVOS CAMPOS PARA LUT ===
     float* precomputed_cos;
     float* precomputed_sin;
     int    precomputed_size;
@@ -409,9 +408,8 @@ void createRingParticle(RingParticle* p, int ringIndex, int numRings, float minR
     p->velocity.y = 0.0f;
     p->velocity.z = p->orbitRadius * p->orbitSpeed * cosAngle;
     
-    // Propiedades visuales mejoradas
     p->size = 0.02f + ((float)rand() / RAND_MAX) * 0.01f;
-    p->life = p->maxLife = 100.0f; // Vida muy larga
+    p->life = p->maxLife = 100.0f; 
     p->ringIndex = ringIndex;
     
     float brightness = 0.7f + ((float)rand() / RAND_MAX) * 0.3f;
@@ -557,6 +555,7 @@ void drawRingSystem(RingSystem* rs) {
     for (int ring = 0; ring < rs->numRings; ring++) {
         float pointSize = 3.0f + (float)ring * 0.5f;
 
+
         // === Cálculo paralelo de alpha ===
         #pragma omp parallel for schedule(dynamic, 64)
         for (size_t i = 0; i < rs->count; i++) {
@@ -587,6 +586,7 @@ void drawRingSystem(RingSystem* rs) {
         // === Primer pasada de dibujo ===
         glPointSize(pointSize);
         glBegin(GL_POINTS);
+        #pragma omp parallel for
         for (size_t i = 0; i < rs->count; i++) {
             RingParticle* p = &rs->particles[i];
             if (alphas[i] > 0.0f) {
@@ -596,9 +596,12 @@ void drawRingSystem(RingSystem* rs) {
         }
         glEnd();
 
+
         // === Segunda pasada con puntos más pequeños ===
         glPointSize(pointSize * 0.6f);
         glBegin(GL_POINTS);
+        #pragma omp parallel for
+
         for (size_t i = 0; i < rs->count; i++) {
             RingParticle* p = &rs->particles[i];
             if (alphas[i] > 0.0f) {
@@ -863,6 +866,8 @@ int main(int argc, char* argv[]) {
         mat4_rotate_y(model, planetRotation);
         mat4_lookat(view, cameraDistance * cosf(cameraAngle), cameraHeight, cameraDistance * sinf(cameraAngle),
                     0.0f, 0.0f, 0.0f, 0.0f, 1.0f, 0.0f);
+
+                    
         mat4_perspective(projection, M_PI/4.0f, (float)WINDOW_WIDTH/(float)WINDOW_HEIGHT, 0.1f, 100.0f);
         
         glUniformMatrix4fv(glGetUniformLocation(shaderProgram, "model"), 1, GL_FALSE, model);
