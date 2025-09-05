@@ -5,6 +5,7 @@
 #include <math.h>
 #include <time.h>
 #include <string.h>
+#include <omp.h>
 
 #define STB_IMAGE_IMPLEMENTATION
 #include "stb_image.h"
@@ -125,6 +126,7 @@ Vec3 vec3_normalize(Vec3 v) {
 }
 
 void mat4_identity(float* m) {
+    #pragma omp parallel for
     for (int i = 0; i < 16; i++) {
         m[i] = (i % 5 == 0) ? 1.0f : 0.0f;
     }
@@ -172,25 +174,31 @@ void mat4_rotate_y(float* m, float angle) {
 }
 
 // Generar esfera
+#include <omp.h>
+
+// Generar esfera paralelizada
 void generateSphere(float radius, int sectors, int stacks) {
     sphereVertexCount = (sectors + 1) * (stacks + 1);
     sphereIndexCount = sectors * stacks * 6;
     
     sphereVertices = malloc(sphereVertexCount * sizeof(Vertex));
-    sphereIndices = malloc(sphereIndexCount * sizeof(unsigned int));
+    sphereIndices  = malloc(sphereIndexCount * sizeof(unsigned int));
     
     float sectorStep = 2 * M_PI / sectors;
-    float stackStep = M_PI / stacks;
-    
-    int vertIndex = 0;
+    float stackStep  = M_PI / stacks;
+
+    // === Paralelización de los vértices ===
+    #pragma omp parallel for collapse(2)
     for (int i = 0; i <= stacks; ++i) {
-        float stackAngle = M_PI / 2 - i * stackStep;
-        float xy = radius * cosf(stackAngle);
-        float z = radius * sinf(stackAngle);
-        
         for (int j = 0; j <= sectors; ++j) {
+            int vertIndex = i * (sectors + 1) + j; // índice único sin race condition
+
+            float stackAngle = M_PI / 2 - i * stackStep;
+            float xy = radius * cosf(stackAngle);
+            float z  = radius * sinf(stackAngle);
+
             float sectorAngle = j * sectorStep;
-            
+
             sphereVertices[vertIndex].x = xy * cosf(sectorAngle);
             sphereVertices[vertIndex].y = xy * sinf(sectorAngle);
             sphereVertices[vertIndex].z = z;
@@ -198,14 +206,13 @@ void generateSphere(float radius, int sectors, int stacks) {
             sphereVertices[vertIndex].nx = sphereVertices[vertIndex].x / radius;
             sphereVertices[vertIndex].ny = sphereVertices[vertIndex].y / radius;
             sphereVertices[vertIndex].nz = sphereVertices[vertIndex].z / radius;
-            
+
             sphereVertices[vertIndex].u = (float)j / sectors;
             sphereVertices[vertIndex].v = (float)i / stacks;
-            
-            vertIndex++;
         }
     }
-    
+
+   
     int indexIndex = 0;
     for (int i = 0; i < stacks; ++i) {
         int k1 = i * (sectors + 1);
@@ -226,6 +233,7 @@ void generateSphere(float radius, int sectors, int stacks) {
         }
     }
 }
+
 
 // Compilar shader
 unsigned int compileShader(const char* source, GLenum type) {
@@ -449,107 +457,135 @@ void updateRingParticle(RingParticle* p, float deltaTime) {
 }
 
 void updateRingSystem(RingSystem* rs, float deltaTime) {
+    // Usar schedule dynamic para mejor balance de carga
+    #pragma omp parallel for schedule(dynamic, 128) 
     for (size_t i = 0; i < rs->count; i++) {
         updateRingParticle(&rs->particles[i], deltaTime);
         
-        // Las partículas casi nunca "mueren" ahora por la vida larga
         if (rs->particles[i].life <= 0) {
+            // Mover regeneración fuera del bucle crítico
             int ringIndex = rs->particles[i].ringIndex;
             int particlesPerRing = rs->count / rs->numRings;
             int particleIndexInRing = i % particlesPerRing;
             
-            createRingParticle(&rs->particles[i], ringIndex, rs->numRings, rs->minRadius, rs->maxRadius, 
+            createRingParticle(&rs->particles[i], ringIndex, rs->numRings, 
+                             rs->minRadius, rs->maxRadius, 
                              particleIndexInRing, particlesPerRing, particlesPerRing);
         }
     }
 }
 
+
 void drawRingSystem(RingSystem* rs) {
     glEnable(GL_POINT_SMOOTH);
     glEnable(GL_BLEND);
     glBlendFunc(GL_SRC_ALPHA, GL_ONE); // Blend aditivo para mayor brillo
-    
-    // Dibujar cada anillo por separado con diferentes configuraciones
+
+    // === Pre-asignar memoria solo una vez ===
+    static float* alphas = NULL;
+    static size_t alphas_capacity = 0;
+
+    if (alphas_capacity < rs->count) {
+        alphas = realloc(alphas, rs->count * sizeof(float));
+        alphas_capacity = rs->count;
+    }
+
     for (int ring = 0; ring < rs->numRings; ring++) {
-        // Tamaño de punto más grande para crear discos más sólidos
         float pointSize = 3.0f + (float)ring * 0.5f;
-        glPointSize(pointSize);
-        
-        glBegin(GL_POINTS);
+
+        // === Cálculo paralelo de alpha ===
+        #pragma omp parallel for schedule(dynamic, 64)
         for (size_t i = 0; i < rs->count; i++) {
             RingParticle* p = &rs->particles[i];
             if (p->life > 0 && p->ringIndex == ring) {
-                // Alpha más alto para mayor visibilidad
                 float alpha = 0.8f;
-                
-                // Efecto de densidad: más brillante donde hay más partículas cerca
-                float densityFactor = 1.0f;
                 int nearbyCount = 0;
-                for (size_t j = 0; j < rs->count; j++) {
-                    if (i != j && rs->particles[j].ringIndex == ring) {
+
+                // Buscar vecinos con optimización (evita sqrt, evita duplicados)
+                for (size_t j = i + 1; j < rs->count; j++) {
+                    if (rs->particles[j].ringIndex == ring) {
                         float dx = p->position.x - rs->particles[j].position.x;
                         float dz = p->position.z - rs->particles[j].position.z;
-                        float dist = sqrtf(dx*dx + dz*dz);
-                        if (dist < 0.2f) nearbyCount++;
+                        float dist_sq = dx * dx + dz * dz;
+                        if (dist_sq < 0.04f) { // (0.2f)^2
+                            nearbyCount++;
+                        }
                     }
                 }
-                densityFactor = 1.0f + (float)nearbyCount * 0.1f;
-                alpha *= fminf(densityFactor, 2.0f);
-                
-                glColor4f(p->color.x, p->color.y, p->color.z, alpha);
+
+                float densityFactor = 1.0f + (float)nearbyCount * 0.1f;
+                alphas[i] = alpha * fminf(densityFactor, 2.0f);
+            } else {
+                alphas[i] = 0.0f;
+            }
+        }
+
+        // === Primer pasada de dibujo ===
+        glPointSize(pointSize);
+        glBegin(GL_POINTS);
+        for (size_t i = 0; i < rs->count; i++) {
+            RingParticle* p = &rs->particles[i];
+            if (alphas[i] > 0.0f) {
+                glColor4f(p->color.x, p->color.y, p->color.z, alphas[i]);
                 glVertex3f(p->position.x, p->position.y, p->position.z);
             }
         }
         glEnd();
-        
-        // Segunda pasada con puntos más pequeños para suavizar
+
+        // === Segunda pasada con puntos más pequeños ===
         glPointSize(pointSize * 0.6f);
         glBegin(GL_POINTS);
         for (size_t i = 0; i < rs->count; i++) {
             RingParticle* p = &rs->particles[i];
-            if (p->life > 0 && p->ringIndex == ring) {
+            if (alphas[i] > 0.0f) {
                 glColor4f(p->color.x, p->color.y, p->color.z, 0.3f);
                 glVertex3f(p->position.x, p->position.y, p->position.z);
             }
         }
         glEnd();
     }
-    
+
     glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA); // Restaurar blend normal
     glDisable(GL_POINT_SMOOTH);
 }
 
 
+
 void initializeRingSystem(RingSystem* rs, int numParticles, int numRings) {
     rs->count = numParticles;
-    
-    // Distribución más equitativa entre anillos
+
     int particlesPerRing = numParticles / numRings;
     int remainder = numParticles % numRings;
-    
-    int currentParticle = 0;
-    
+    int maxParticlesPerRing = particlesPerRing + 1; // el máximo posible
+
     printf("Distribuyendo %d partículas en %d anillos:\n", numParticles, numRings);
-    
+
+    #pragma omp parallel for collapse(2)
     for (int ring = 0; ring < numRings; ring++) {
-        int particlesInThisRing = particlesPerRing;
-        if (ring < remainder) {
-            particlesInThisRing++;
-        }
-        
-        printf("  Anillo %d: %d partículas (radio %.2f - %.2f)\n", 
-               ring, particlesInThisRing,
-               rs->minRadius + ring * ((rs->maxRadius - rs->minRadius) / (numRings - 1)),
-               rs->minRadius + ring * ((rs->maxRadius - rs->minRadius) / (numRings - 1)) + 
-               ((rs->maxRadius - rs->minRadius) / (numRings - 1)) * 0.15f);
-        
-        for (int p = 0; p < particlesInThisRing; p++) {
-            createRingParticle(&rs->particles[currentParticle], ring, numRings, 
-                             rs->minRadius, rs->maxRadius, p, particlesInThisRing, particlesInThisRing);
-            currentParticle++;
+        for (int p = 0; p < maxParticlesPerRing; p++) {
+            int particlesInThisRing = particlesPerRing + (ring < remainder ? 1 : 0);
+
+            // Saltar iteraciones sobrantes
+            if (p >= particlesInThisRing) continue;
+
+            float baseRadius = rs->minRadius + ring * ((rs->maxRadius - rs->minRadius) / (numRings - 1));
+            float maxRadius  = baseRadius + ((rs->maxRadius - rs->minRadius) / (numRings - 1)) * 0.15f;
+
+            // Calcular índice global
+            int globalIndex = 0;
+            for (int r = 0; r < ring; r++) {
+                globalIndex += particlesPerRing + (r < remainder ? 1 : 0);
+            }
+            globalIndex += p;
+
+            createRingParticle(&rs->particles[globalIndex], ring, numRings,
+                               rs->minRadius, rs->maxRadius, p,
+                               particlesInThisRing, particlesInThisRing);
         }
     }
 }
+
+
 
 
 void setupCamera(float cameraAngle, float cameraHeight, float cameraDistance) {
@@ -615,6 +651,10 @@ int main(int argc, char* argv[]) {
         printf("Error: Número de partículas debe ser mayor que 0\n");
         return 1;
     }
+
+    omp_set_num_threads(omp_get_max_threads());
+    omp_set_dynamic(0); // deshabilitar ajuste dinámico
+    printf("Usando %d threads\n", omp_get_max_threads());
     
     printf("Creando sistema de anillos de Urano con %d partículas...\n", numParticles);
     
@@ -705,6 +745,7 @@ int main(int argc, char* argv[]) {
     RingSystem* stars = createRingSystem(numStars, 1, 0.0f, 0.0f); // radio no importa porque no usamos órbitas
     stars->count = numStars;
 
+    #pragma omp parallel for
     for (int i = 0; i < stars->count; i++) {
         // Distribución aleatoria en un cubo grande
         float range = 50.0f; // cuánto se alejan del centro
