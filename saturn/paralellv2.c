@@ -12,8 +12,6 @@
 
 #define WINDOW_WIDTH 1200
 #define WINDOW_HEIGHT 800
-#define MAX_PARTICLES 50000
-#define M_PI 3.14159265359
 
 // Estructuras matemáticas
 typedef struct {

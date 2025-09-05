@@ -9,10 +9,8 @@
 #define STB_IMAGE_IMPLEMENTATION
 #include "stb_image.h"
 
-#define WINDOW_WIDTH 800
+#define WINDOW_WIDTH 1200
 #define WINDOW_HEIGHT 600
-#define MAX_PARTICLES 50000
-#define M_PI 3.14159265359
 
 // Estructuras matemáticas
 typedef struct {
