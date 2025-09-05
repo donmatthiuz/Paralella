@@ -489,6 +489,7 @@ int main(int argc, char* argv[]) {
     }
     
     int numParticles = atoi(argv[1]);
+    int numRings = atoi(argv[2]);
     if (numParticles <= 0) {
         printf("Error: Número de partículas debe ser mayor que 0\n");
         return 1;
@@ -570,7 +571,6 @@ int main(int argc, char* argv[]) {
     srand((unsigned int)time(NULL));
     
     // Crear sistema de anillos
-    int numRings = 1;  // Número de anillos
     float minRadius = 1.0f;  // Radio mínimo (después de la superficie del planeta)
     float maxRadius = 4.0f;  // Radio máximo
     
@@ -681,7 +681,7 @@ int main(int argc, char* argv[]) {
         // Debug info cada 60 frames
         frameCount++;
         if (frameCount % 60 == 0) {
-            printf("Frame %d - FPS: %.1f - Partículas: %zu - Anillos: %d\n", 
+            printf("Frame %d - FPS: %.1f - Particulas: %zu - Anillos: %d\n", 
                    frameCount, 1.0f / deltaTime, rs->count, numRings);
         }
     }
