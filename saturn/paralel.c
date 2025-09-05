@@ -315,61 +315,68 @@ void destroyRingSystem(RingSystem* rs) {
     }
 }
 
-void createRingParticle(RingParticle* p, int ringIndex, int numRings, float minRadius, float maxRadius) {
+unsigned int randomWithSeed(unsigned int* seed) {
+    *seed = (*seed * 1103515245 + 12345) & 0x7fffffff; // LCG sencillo
+    return *seed;
+}
+
+
+void createRingParticle(RingParticle* p, int ringIndex, int numRings,
+                        float minRadius, float maxRadius, unsigned int* seed) {
+
+    // Función auxiliar para obtener un float [0,1)
+    float randFloat(unsigned int* seed) {
+    if (seed == NULL)
+        return (float)rand() / RAND_MAX;
+    else
+        return (float)randomWithSeed(seed) / UINT_MAX;
+    }
+
+
     // Calcular radio del anillo basado en el índice
     float ringSpacing = (maxRadius - minRadius) / (numRings > 1 ? numRings - 1 : 1);
-    float baseRadius = minRadius + 0.4 + ringIndex * ringSpacing;
-    
+    float baseRadius = minRadius + 0.4f + ringIndex * ringSpacing;
+
     // Añadir variación aleatoria al radio
-    p->orbitRadius = baseRadius + ((float)rand() / RAND_MAX - 0.5f) * ringSpacing * 0.3f;
-    
+    p->orbitRadius = baseRadius + (randFloat(seed) - 0.5f) * ringSpacing * 0.3f;
+
     // Ángulo inicial aleatorio
-    p->orbitAngle = ((float)rand() / RAND_MAX) * 2.0f * M_PI;
-    
-    // Velocidad orbital (más rápida para anillos internos - ley de Kepler)
+    p->orbitAngle = randFloat(seed) * 2.0f * M_PI;
+
+    // Velocidad orbital
     float baseSpeed = 10.5f / sqrtf(p->orbitRadius);
-    p->orbitSpeed = baseSpeed * (0.8f + ((float)rand() / RAND_MAX) * 0.4f);
-    
-    // Inclinación del anillo (Urano tiene anillos inclinados)
-    p->inclination = ((float)rand() / RAND_MAX - 0.5f) * 0.2f; // Pequeña inclinación
-    
-    // Desplazamiento vertical para crear grosor del anillo
-    p->verticalOffset = ((float)rand() / RAND_MAX - 0.5f) * 0.1f;
-    
-    // Calcular posición inicial
+    p->orbitSpeed = baseSpeed * (0.8f + randFloat(seed) * 0.4f);
+
+    // Inclinación y desplazamiento vertical
+    p->inclination = (randFloat(seed) - 0.5f) * 0.2f;
+    p->verticalOffset = (randFloat(seed) - 0.5f) * 0.1f;
+
+    // Posición inicial
     float cosAngle = cosf(p->orbitAngle);
     float sinAngle = sinf(p->orbitAngle);
-    
     p->position.x = p->orbitRadius * cosAngle;
     p->position.y = p->verticalOffset + p->orbitRadius * p->inclination * sinAngle;
     p->position.z = p->orbitRadius * sinAngle;
-    
+
     // Velocidad tangencial
     p->velocity.x = -p->orbitRadius * p->orbitSpeed * sinAngle;
-    p->velocity.y = p->orbitRadius * p->orbitSpeed * p->inclination * cosAngle;
-    p->velocity.z = p->orbitRadius * p->orbitSpeed * cosAngle;
-    
+    p->velocity.y =  p->orbitRadius * p->orbitSpeed * p->inclination * cosAngle;
+    p->velocity.z =  p->orbitRadius * p->orbitSpeed * cosAngle;
+
     // Propiedades visuales
-    p->size = 0.02f + ((float)rand() / RAND_MAX) * 0.03f;
-    p->life = p->maxLife = 5.0f + ((float)rand() / RAND_MAX) * 10.0f;
+    p->size = 0.02f + randFloat(seed) * 0.03f;
+    p->life = p->maxLife = 5.0f + randFloat(seed) * 10.0f;
     p->ringIndex = ringIndex;
-    
-    // Colores diferentes para cada anillo
+
+    // Colores
     switch (ringIndex % 4) {
-        case 0: // Anillo interno - azulado
-            p->color = (Vec3){1.0f, 1.0f, 1.0f};
-            break;
-        case 1: // Segundo anillo - verdoso
-            p->color = (Vec3){0.7f, 1.0f, 0.8f};
-            break;
-        case 2: // Tercer anillo - amarillento
-            p->color = (Vec3){1.0f, 1.0f, 0.7f};
-            break;
-        case 3: // Anillo externo - rojizo
-            p->color = (Vec3){1.0f, 0.8f, 0.6f};
-            break;
+        case 0: p->color = (Vec3){1.0f, 1.0f, 1.0f}; break;
+        case 1: p->color = (Vec3){0.7f, 1.0f, 0.8f}; break;
+        case 2: p->color = (Vec3){1.0f, 1.0f, 0.7f}; break;
+        case 3: p->color = (Vec3){1.0f, 0.8f, 0.6f}; break;
     }
 }
+
 
 void updateRingParticle(RingParticle* p, float deltaTime) {
     // Actualizar ángulo orbital
@@ -399,14 +406,17 @@ void updateRingSystem(RingSystem* rs, float deltaTime) {
     #pragma omp parallel for
     for (size_t i = 0; i < rs->count; i++) {
         updateRingParticle(&rs->particles[i], deltaTime);
-        
-        // Regenerar partícula si "murió"
+
         if (rs->particles[i].life <= 0) {
             int ringIndex = rs->particles[i].ringIndex;
-            createRingParticle(&rs->particles[i], ringIndex, rs->numRings, rs->minRadius, rs->maxRadius);
+            // Semilla única para la regeneración
+            unsigned int seed = (unsigned int)(i * 12345 + omp_get_thread_num() * 6789 + time(NULL));
+            createRingParticle(&rs->particles[i], ringIndex, rs->numRings,
+                               rs->minRadius, rs->maxRadius, &seed);
         }
     }
 }
+
 
 void drawRingSystem(RingSystem* rs) {
     glEnable(GL_POINT_SMOOTH);
@@ -603,14 +613,19 @@ int main(int argc, char* argv[]) {
     rs->count = numParticles;
     int particlesPerRing = numParticles / numRings;
     
-    #pragma omp parallel for
 
+    #pragma omp parallel for schedule(dynamic)
     for (int i = 0; i < numParticles; i++) {
         int ringIndex = i / particlesPerRing;
         if (ringIndex >= numRings) ringIndex = numRings - 1;
-        
-        createRingParticle(&rs->particles[i], ringIndex, numRings, minRadius, maxRadius);
+
+        // Semilla única para cada partícula
+        unsigned int seed = (unsigned int)(i * 12345 + omp_get_thread_num() * 6789 + time(NULL));
+
+        createRingParticle(&rs->particles[i], ringIndex, numRings, minRadius, maxRadius, &seed);
     }
+
+    
     
     printf("Sistema iniciado con %d anillos. Usa ESC para salir.\n", numRings);
     
@@ -620,7 +635,7 @@ int main(int argc, char* argv[]) {
     double planetRotation = 0.0;
     int frameCount = 0;
     float cameraHeight = 2.0f;
-    float cameraDistance = 8.0f;
+    float cameraDistance = 4.0f;
     
     // Bucle principal
     while (!glfwWindowShouldClose(window)) {

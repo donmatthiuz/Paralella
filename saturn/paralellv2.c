@@ -5,12 +5,13 @@
 #include <math.h>
 #include <time.h>
 #include <string.h>
+#include <omp.h>
 
 #define STB_IMAGE_IMPLEMENTATION
 #include "stb_image.h"
 
 #define WINDOW_WIDTH 1200
-#define WINDOW_HEIGHT 600
+#define WINDOW_HEIGHT 800
 
 // Estructuras matemáticas
 typedef struct {
@@ -38,6 +39,7 @@ typedef struct {
 } RingParticle;
 
 // Sistema de anillos
+// Sistema de anillos
 typedef struct {
     RingParticle* particles;
     size_t count;
@@ -45,7 +47,17 @@ typedef struct {
     int numRings;         // Número de anillos
     float minRadius;      // Radio mínimo de anillos
     float maxRadius;      // Radio máximo de anillos
+
+    float* precomputed_cos;
+    float* precomputed_sin;
+    int    precomputed_size;
 } RingSystem;
+
+
+
+static float* g_precomputed_cos = NULL;
+static float* g_precomputed_sin = NULL;
+static int    g_precomputed_size = 0;
 
 // Estructura para vértices de la esfera
 typedef struct {
@@ -123,6 +135,7 @@ Vec3 vec3_normalize(Vec3 v) {
 }
 
 void mat4_identity(float* m) {
+    #pragma omp parallel for
     for (int i = 0; i < 16; i++) {
         m[i] = (i % 5 == 0) ? 1.0f : 0.0f;
     }
@@ -170,25 +183,31 @@ void mat4_rotate_y(float* m, float angle) {
 }
 
 // Generar esfera
+#include <omp.h>
+
+// Generar esfera paralelizada
 void generateSphere(float radius, int sectors, int stacks) {
     sphereVertexCount = (sectors + 1) * (stacks + 1);
     sphereIndexCount = sectors * stacks * 6;
     
     sphereVertices = malloc(sphereVertexCount * sizeof(Vertex));
-    sphereIndices = malloc(sphereIndexCount * sizeof(unsigned int));
+    sphereIndices  = malloc(sphereIndexCount * sizeof(unsigned int));
     
     float sectorStep = 2 * M_PI / sectors;
-    float stackStep = M_PI / stacks;
-    
-    int vertIndex = 0;
+    float stackStep  = M_PI / stacks;
+
+    // === Paralelización de los vértices ===
+    #pragma omp parallel for collapse(2)
     for (int i = 0; i <= stacks; ++i) {
-        float stackAngle = M_PI / 2 - i * stackStep;
-        float xy = radius * cosf(stackAngle);
-        float z = radius * sinf(stackAngle);
-        
         for (int j = 0; j <= sectors; ++j) {
+            int vertIndex = i * (sectors + 1) + j; // índice único sin race condition
+
+            float stackAngle = M_PI / 2 - i * stackStep;
+            float xy = radius * cosf(stackAngle);
+            float z  = radius * sinf(stackAngle);
+
             float sectorAngle = j * sectorStep;
-            
+
             sphereVertices[vertIndex].x = xy * cosf(sectorAngle);
             sphereVertices[vertIndex].y = xy * sinf(sectorAngle);
             sphereVertices[vertIndex].z = z;
@@ -196,14 +215,13 @@ void generateSphere(float radius, int sectors, int stacks) {
             sphereVertices[vertIndex].nx = sphereVertices[vertIndex].x / radius;
             sphereVertices[vertIndex].ny = sphereVertices[vertIndex].y / radius;
             sphereVertices[vertIndex].nz = sphereVertices[vertIndex].z / radius;
-            
+
             sphereVertices[vertIndex].u = (float)j / sectors;
             sphereVertices[vertIndex].v = (float)i / stacks;
-            
-            vertIndex++;
         }
     }
-    
+
+   
     int indexIndex = 0;
     for (int i = 0; i < stacks; ++i) {
         int k1 = i * (sectors + 1);
@@ -224,6 +242,7 @@ void generateSphere(float radius, int sectors, int stacks) {
         }
     }
 }
+
 
 // Compilar shader
 unsigned int compileShader(const char* source, GLenum type) {
@@ -275,22 +294,52 @@ unsigned int loadTexture(const char* path) {
 
 // Funciones del sistema de anillos
 RingSystem* createRingSystem(size_t capacity, int numRings, float minRadius, float maxRadius) {
-    RingSystem* rs = malloc(sizeof(RingSystem));
+    RingSystem* rs = (RingSystem*)malloc(sizeof(RingSystem));
     if (!rs) return NULL;
-    
-    rs->particles = malloc(sizeof(RingParticle) * capacity);
+
+    rs->particles = (RingParticle*)malloc(sizeof(RingParticle) * capacity);
     if (!rs->particles) {
         free(rs);
         return NULL;
     }
-    
-    rs->count = 0;
-    rs->capacity = capacity;
-    rs->numRings = numRings;
-    rs->minRadius = minRadius;
-    rs->maxRadius = maxRadius;
+
+    rs->count      = 0;
+    rs->capacity   = capacity;
+    rs->numRings   = numRings;
+    rs->minRadius  = minRadius;
+    rs->maxRadius  = maxRadius;
+
+    // ===== NUEVA OPTIMIZACIÓN: LUT de seno/coseno =====
+    rs->precomputed_size = 3600; // 0.1 grados por muestra
+    rs->precomputed_cos  = (float*)malloc(rs->precomputed_size * sizeof(float));
+    rs->precomputed_sin  = (float*)malloc(rs->precomputed_size * sizeof(float));
+
+    if (!rs->precomputed_cos || !rs->precomputed_sin) {
+        free(rs->precomputed_cos);
+        free(rs->precomputed_sin);
+        free(rs->particles);
+        free(rs);
+        return NULL;
+    }
+
+    // Llenado del LUT
+    #pragma omp parallel for
+    for (int i = 0; i < rs->precomputed_size; i++) {
+        float angle = (2.0f * (float)M_PI * (float)i) / (float)rs->precomputed_size;
+        rs->precomputed_cos[i] = cosf(angle);
+        rs->precomputed_sin[i] = sinf(angle);
+    }
+
+    // Hacer visible el LUT a updateRingParticle (sin cambiar su firma)
+    g_precomputed_cos  = rs->precomputed_cos;
+    g_precomputed_sin  = rs->precomputed_sin;
+    g_precomputed_size = rs->precomputed_size;
+
     return rs;
 }
+
+
+
 
 void destroyRingSystem(RingSystem* rs) {
     if (rs) {
@@ -357,9 +406,8 @@ void createRingParticle(RingParticle* p, int ringIndex, int numRings, float minR
     p->velocity.y = 0.0f;
     p->velocity.z = p->orbitRadius * p->orbitSpeed * cosAngle;
     
-    // Propiedades visuales mejoradas
     p->size = 0.02f + ((float)rand() / RAND_MAX) * 0.01f;
-    p->life = p->maxLife = 100.0f; // Vida muy larga
+    p->life = p->maxLife = 100.0f; 
     p->ringIndex = ringIndex;
     
     float brightness = 0.7f + ((float)rand() / RAND_MAX) * 0.3f;
@@ -422,41 +470,66 @@ void createRingParticle(RingParticle* p, int ringIndex, int numRings, float minR
 
 
 void updateRingParticle(RingParticle* p, float deltaTime) {
+    const float TWO_PI = 2.0f * (float)M_PI;
+
     // Actualizar ángulo orbital
     float speedMultiplier = 3.0f;
     p->orbitAngle += p->orbitSpeed * deltaTime * speedMultiplier;
-    if (p->orbitAngle > 2.0f * M_PI) {
-        p->orbitAngle -= 2.0f * M_PI;
+    if (p->orbitAngle >= TWO_PI) {
+        p->orbitAngle -= TWO_PI;
+    } else if (p->orbitAngle < 0.0f) {
+        p->orbitAngle += TWO_PI;
     }
-    
+
+    float cosAngle, sinAngle;
+
+    // === Usar LUT si está disponible; si no, caer a cosf/sinf ===
+    if (g_precomputed_cos && g_precomputed_sin && g_precomputed_size > 0) {
+        // Mapear ángulo a índice fraccional en [0, precomputed_size)
+        float fidx = (p->orbitAngle * (float)g_precomputed_size) / TWO_PI;
+        int   idx  = (int)fidx;                     // parte entera
+        float t    = fidx - (float)idx;             // parte fraccional
+        if (idx >= g_precomputed_size) idx -= g_precomputed_size;
+        int next = idx + 1; if (next >= g_precomputed_size) next = 0;
+
+        // Interpolación lineal para mayor precisión/suavidad
+        cosAngle = g_precomputed_cos[idx] + t * (g_precomputed_cos[next] - g_precomputed_cos[idx]);
+        sinAngle = g_precomputed_sin[idx] + t * (g_precomputed_sin[next] - g_precomputed_sin[idx]);
+    } else {
+        // Fallback seguro
+        cosAngle = cosf(p->orbitAngle);
+        sinAngle = sinf(p->orbitAngle);
+    }
+
     // Calcular nueva posición orbital
-    float cosAngle = cosf(p->orbitAngle);
-    float sinAngle = sinf(p->orbitAngle);
-    
     p->position.x = p->orbitRadius * cosAngle;
     p->position.y = p->verticalOffset + p->orbitRadius * p->inclination * sinAngle;
     p->position.z = p->orbitRadius * sinAngle;
-    
+
     // Actualizar velocidad tangencial
     p->velocity.x = -p->orbitRadius * p->orbitSpeed * sinAngle;
-    p->velocity.y = p->orbitRadius * p->orbitSpeed * p->inclination * cosAngle;
-    p->velocity.z = p->orbitRadius * p->orbitSpeed * cosAngle;
-    
+    p->velocity.y =  p->orbitRadius * p->orbitSpeed * p->inclination * cosAngle;
+    p->velocity.z =  p->orbitRadius * p->orbitSpeed * cosAngle;
+
     // Actualizar vida
     p->life -= deltaTime;
 }
 
+
 void updateRingSystem(RingSystem* rs, float deltaTime) {
+    // Usar schedule dynamic para mejor balance de carga
+    #pragma omp parallel for schedule(dynamic, 128) 
     for (size_t i = 0; i < rs->count; i++) {
         updateRingParticle(&rs->particles[i], deltaTime);
         
-        // Las partículas casi nunca "mueren" ahora por la vida larga
         if (rs->particles[i].life <= 0) {
+            // Mover regeneración fuera del bucle crítico
             int ringIndex = rs->particles[i].ringIndex;
             int particlesPerRing = rs->count / rs->numRings;
             int particleIndexInRing = i % particlesPerRing;
             
-            createRingParticle(&rs->particles[i], ringIndex, rs->numRings, rs->minRadius, rs->maxRadius, 
+            createRingParticle(&rs->particles[i], ringIndex, rs->numRings, 
+                             rs->minRadius, rs->maxRadius, 
                              particleIndexInRing, particlesPerRing, particlesPerRing);
         }
     }
@@ -467,87 +540,156 @@ void drawRingSystem(RingSystem* rs) {
     glEnable(GL_BLEND);
     glBlendFunc(GL_SRC_ALPHA, GL_ONE); // Blend aditivo para mayor brillo
     
-    // Dibujar cada anillo por separado con diferentes configuraciones
+    // === Pre-asignar memoria solo una vez ===
+    static float* alphas = NULL;
+    static float* vertices = NULL;  // Buffer para vértices
+    static float* colors = NULL;    // Buffer para colores
+    static int* valid_indices = NULL; // Índices de partículas válidas
+    static size_t buffer_capacity = 0;
+    
+    if (buffer_capacity < rs->count) {
+        alphas = realloc(alphas, rs->count * sizeof(float));
+        vertices = realloc(vertices, rs->count * 3 * sizeof(float)); // x,y,z por partícula
+        colors = realloc(colors, rs->count * 4 * sizeof(float));     // r,g,b,a por partícula
+        valid_indices = realloc(valid_indices, rs->count * sizeof(int));
+        buffer_capacity = rs->count;
+    }
+    
     for (int ring = 0; ring < rs->numRings; ring++) {
-        // Tamaño de punto más grande para crear discos más sólidos
         float pointSize = 3.0f + (float)ring * 0.5f;
-        glPointSize(pointSize);
         
-        glBegin(GL_POINTS);
+        // === FASE 1: Cálculo paralelo de alpha ===
+        #pragma omp parallel for schedule(dynamic, 64)
         for (size_t i = 0; i < rs->count; i++) {
             RingParticle* p = &rs->particles[i];
             if (p->life > 0 && p->ringIndex == ring) {
-                // Alpha más alto para mayor visibilidad
                 float alpha = 0.8f;
-                
-                // Efecto de densidad: más brillante donde hay más partículas cerca
-                float densityFactor = 1.0f;
                 int nearbyCount = 0;
-                for (size_t j = 0; j < rs->count; j++) {
-                    if (i != j && rs->particles[j].ringIndex == ring) {
+                
+                // Buscar vecinos con optimización
+                for (size_t j = i + 1; j < rs->count; j++) {
+                    if (rs->particles[j].ringIndex == ring) {
                         float dx = p->position.x - rs->particles[j].position.x;
                         float dz = p->position.z - rs->particles[j].position.z;
-                        float dist = sqrtf(dx*dx + dz*dz);
-                        if (dist < 0.2f) nearbyCount++;
+                        float dist_sq = dx * dx + dz * dz;
+                        if (dist_sq < 0.04f) {
+                            nearbyCount++;
+                        }
                     }
                 }
-                densityFactor = 1.0f + (float)nearbyCount * 0.1f;
-                alpha *= fminf(densityFactor, 2.0f);
                 
-                glColor4f(p->color.x, p->color.y, p->color.z, alpha);
-                glVertex3f(p->position.x, p->position.y, p->position.z);
+                float densityFactor = 1.0f + (float)nearbyCount * 0.1f;
+                alphas[i] = alpha * fminf(densityFactor, 2.0f);
+            } else {
+                alphas[i] = 0.0f;
             }
+        }
+ 
+        int valid_count = 0;
+        
+        #pragma omp parallel
+        {
+            int local_count = 0;
+            int thread_start_index = 0;
+            
+            #pragma omp for schedule(static)
+            for (size_t i = 0; i < rs->count; i++) {
+                if (alphas[i] > 0.0f) {
+                    local_count++;
+                }
+            }
+            
+            // ← Barrera implícita del for
+            
+            // FASE 2a: Calcular offset para cada thread (reduction)
+            #pragma omp critical
+            {
+                thread_start_index = valid_count;
+                valid_count += local_count;
+            }
+            
+            #pragma omp barrier  
+            
+            // FASE 2b: Llenar buffers con offset correcto
+            int local_index = thread_start_index;
+            #pragma omp for schedule(static)
+            for (size_t i = 0; i < rs->count; i++) {
+                if (alphas[i] > 0.0f) {
+                    RingParticle* p = &rs->particles[i];
+                    
+                    // Guardar índice y datos
+                    valid_indices[local_index] = (int)i;
+                    
+                    vertices[local_index * 3 + 0] = p->position.x;
+                    vertices[local_index * 3 + 1] = p->position.y;
+                    vertices[local_index * 3 + 2] = p->position.z;
+                    
+                    colors[local_index * 4 + 0] = p->color.x;
+                    colors[local_index * 4 + 1] = p->color.y;
+                    colors[local_index * 4 + 2] = p->color.z;
+                    colors[local_index * 4 + 3] = alphas[i];
+                    
+                    local_index++;
+                }
+            }
+        }
+        
+        
+        glPointSize(pointSize);
+        glBegin(GL_POINTS);
+        for (int k = 0; k < valid_count; k++) {
+            glColor4f(colors[k*4 + 0], colors[k*4 + 1], colors[k*4 + 2], colors[k*4 + 3]);
+            glVertex3f(vertices[k*3 + 0], vertices[k*3 + 1], vertices[k*3 + 2]);
         }
         glEnd();
         
-        // Segunda pasada con puntos más pequeños para suavizar
         glPointSize(pointSize * 0.6f);
         glBegin(GL_POINTS);
-        for (size_t i = 0; i < rs->count; i++) {
-            RingParticle* p = &rs->particles[i];
-            if (p->life > 0 && p->ringIndex == ring) {
-                glColor4f(p->color.x, p->color.y, p->color.z, 0.3f);
-                glVertex3f(p->position.x, p->position.y, p->position.z);
-            }
+        for (int k = 0; k < valid_count; k++) {
+            glColor4f(colors[k*4 + 0], colors[k*4 + 1], colors[k*4 + 2], 0.3f);
+            glVertex3f(vertices[k*3 + 0], vertices[k*3 + 1], vertices[k*3 + 2]);
         }
         glEnd();
     }
     
-    glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA); // Restaurar blend normal
+    glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
     glDisable(GL_POINT_SMOOTH);
 }
-
-
 void initializeRingSystem(RingSystem* rs, int numParticles, int numRings) {
     rs->count = numParticles;
-    
-    // Distribución más equitativa entre anillos
+
     int particlesPerRing = numParticles / numRings;
     int remainder = numParticles % numRings;
-    
-    int currentParticle = 0;
-    
+    int maxParticlesPerRing = particlesPerRing + 1; // el máximo posible
+
     printf("Distribuyendo %d partículas en %d anillos:\n", numParticles, numRings);
-    
+
+    #pragma omp parallel for collapse(2)
     for (int ring = 0; ring < numRings; ring++) {
-        int particlesInThisRing = particlesPerRing;
-        if (ring < remainder) {
-            particlesInThisRing++;
-        }
-        
-        printf("  Anillo %d: %d partículas (radio %.2f - %.2f)\n", 
-               ring, particlesInThisRing,
-               rs->minRadius + ring * ((rs->maxRadius - rs->minRadius) / (numRings - 1)),
-               rs->minRadius + ring * ((rs->maxRadius - rs->minRadius) / (numRings - 1)) + 
-               ((rs->maxRadius - rs->minRadius) / (numRings - 1)) * 0.15f);
-        
-        for (int p = 0; p < particlesInThisRing; p++) {
-            createRingParticle(&rs->particles[currentParticle], ring, numRings, 
-                             rs->minRadius, rs->maxRadius, p, particlesInThisRing, particlesInThisRing);
-            currentParticle++;
+        for (int p = 0; p < maxParticlesPerRing; p++) {
+            int particlesInThisRing = particlesPerRing + (ring < remainder ? 1 : 0);
+
+            // Saltar iteraciones sobrantes
+            if (p >= particlesInThisRing) continue;
+
+            float baseRadius = rs->minRadius + ring * ((rs->maxRadius - rs->minRadius) / (numRings - 1));
+            float maxRadius  = baseRadius + ((rs->maxRadius - rs->minRadius) / (numRings - 1)) * 0.15f;
+
+            // Calcular índice global
+            int globalIndex = 0;
+            for (int r = 0; r < ring; r++) {
+                globalIndex += particlesPerRing + (r < remainder ? 1 : 0);
+            }
+            globalIndex += p;
+
+            createRingParticle(&rs->particles[globalIndex], ring, numRings,
+                               rs->minRadius, rs->maxRadius, p,
+                               particlesInThisRing, particlesInThisRing);
         }
     }
 }
+
+
 
 
 void setupCamera(float cameraAngle, float cameraHeight, float cameraDistance) {
@@ -613,6 +755,10 @@ int main(int argc, char* argv[]) {
         printf("Error: Número de partículas debe ser mayor que 0\n");
         return 1;
     }
+
+    omp_set_num_threads(omp_get_max_threads());
+    omp_set_dynamic(0); // deshabilitar ajuste dinámico
+    printf("Usando %d threads\n", omp_get_max_threads());
     
     printf("Creando sistema de anillos de Urano con %d partículas...\n", numParticles);
     
@@ -703,6 +849,7 @@ int main(int argc, char* argv[]) {
     RingSystem* stars = createRingSystem(numStars, 1, 0.0f, 0.0f); // radio no importa porque no usamos órbitas
     stars->count = numStars;
 
+    #pragma omp parallel for
     for (int i = 0; i < stars->count; i++) {
         // Distribución aleatoria en un cubo grande
         float range = 50.0f; // cuánto se alejan del centro
@@ -756,6 +903,8 @@ int main(int argc, char* argv[]) {
         mat4_rotate_y(model, planetRotation);
         mat4_lookat(view, cameraDistance * cosf(cameraAngle), cameraHeight, cameraDistance * sinf(cameraAngle),
                     0.0f, 0.0f, 0.0f, 0.0f, 1.0f, 0.0f);
+
+                    
         mat4_perspective(projection, M_PI/4.0f, (float)WINDOW_WIDTH/(float)WINDOW_HEIGHT, 0.1f, 100.0f);
         
         glUniformMatrix4fv(glGetUniformLocation(shaderProgram, "model"), 1, GL_FALSE, model);

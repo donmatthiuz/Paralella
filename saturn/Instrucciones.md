@@ -35,7 +35,7 @@ gcc main.c -o particle_sim -lGL -lGLEW -lglfw -lm
 
 ---
 
-### 4️⃣ Ejecutar
+### 4️⃣ Ejecutar Serial
 
 Después de compilar:
 
@@ -48,5 +48,11 @@ Después de compilar:
 El 1000 es el numero de particulas, ve variando
 
 
+### 5️⃣ Ejecutar Paralella
 
 
+```bash
+
+gcc paralel.c -o particle_sim_parallel -lGL -lGLEW -lglfw -lm -fopenmp
+
+```
