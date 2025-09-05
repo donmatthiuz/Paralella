@@ -41,6 +41,7 @@ typedef struct {
 } RingParticle;
 
 // Sistema de anillos
+// Sistema de anillos
 typedef struct {
     RingParticle* particles;
     size_t count;
@@ -48,7 +49,18 @@ typedef struct {
     int numRings;         // Número de anillos
     float minRadius;      // Radio mínimo de anillos
     float maxRadius;      // Radio máximo de anillos
+
+    // === NUEVOS CAMPOS PARA LUT ===
+    float* precomputed_cos;
+    float* precomputed_sin;
+    int    precomputed_size;
 } RingSystem;
+
+
+
+static float* g_precomputed_cos = NULL;
+static float* g_precomputed_sin = NULL;
+static int    g_precomputed_size = 0;
 
 // Estructura para vértices de la esfera
 typedef struct {
@@ -285,22 +297,52 @@ unsigned int loadTexture(const char* path) {
 
 // Funciones del sistema de anillos
 RingSystem* createRingSystem(size_t capacity, int numRings, float minRadius, float maxRadius) {
-    RingSystem* rs = malloc(sizeof(RingSystem));
+    RingSystem* rs = (RingSystem*)malloc(sizeof(RingSystem));
     if (!rs) return NULL;
-    
-    rs->particles = malloc(sizeof(RingParticle) * capacity);
+
+    rs->particles = (RingParticle*)malloc(sizeof(RingParticle) * capacity);
     if (!rs->particles) {
         free(rs);
         return NULL;
     }
-    
-    rs->count = 0;
-    rs->capacity = capacity;
-    rs->numRings = numRings;
-    rs->minRadius = minRadius;
-    rs->maxRadius = maxRadius;
+
+    rs->count      = 0;
+    rs->capacity   = capacity;
+    rs->numRings   = numRings;
+    rs->minRadius  = minRadius;
+    rs->maxRadius  = maxRadius;
+
+    // ===== NUEVA OPTIMIZACIÓN: LUT de seno/coseno =====
+    rs->precomputed_size = 3600; // 0.1 grados por muestra
+    rs->precomputed_cos  = (float*)malloc(rs->precomputed_size * sizeof(float));
+    rs->precomputed_sin  = (float*)malloc(rs->precomputed_size * sizeof(float));
+
+    if (!rs->precomputed_cos || !rs->precomputed_sin) {
+        free(rs->precomputed_cos);
+        free(rs->precomputed_sin);
+        free(rs->particles);
+        free(rs);
+        return NULL;
+    }
+
+    // Llenado del LUT
+    #pragma omp parallel for
+    for (int i = 0; i < rs->precomputed_size; i++) {
+        float angle = (2.0f * (float)M_PI * (float)i) / (float)rs->precomputed_size;
+        rs->precomputed_cos[i] = cosf(angle);
+        rs->precomputed_sin[i] = sinf(angle);
+    }
+
+    // Hacer visible el LUT a updateRingParticle (sin cambiar su firma)
+    g_precomputed_cos  = rs->precomputed_cos;
+    g_precomputed_sin  = rs->precomputed_sin;
+    g_precomputed_size = rs->precomputed_size;
+
     return rs;
 }
+
+
+
 
 void destroyRingSystem(RingSystem* rs) {
     if (rs) {
@@ -432,29 +474,51 @@ void createRingParticle(RingParticle* p, int ringIndex, int numRings, float minR
 
 
 void updateRingParticle(RingParticle* p, float deltaTime) {
+    const float TWO_PI = 2.0f * (float)M_PI;
+
     // Actualizar ángulo orbital
     float speedMultiplier = 3.0f;
     p->orbitAngle += p->orbitSpeed * deltaTime * speedMultiplier;
-    if (p->orbitAngle > 2.0f * M_PI) {
-        p->orbitAngle -= 2.0f * M_PI;
+    if (p->orbitAngle >= TWO_PI) {
+        p->orbitAngle -= TWO_PI;
+    } else if (p->orbitAngle < 0.0f) {
+        p->orbitAngle += TWO_PI;
     }
-    
+
+    float cosAngle, sinAngle;
+
+    // === Usar LUT si está disponible; si no, caer a cosf/sinf ===
+    if (g_precomputed_cos && g_precomputed_sin && g_precomputed_size > 0) {
+        // Mapear ángulo a índice fraccional en [0, precomputed_size)
+        float fidx = (p->orbitAngle * (float)g_precomputed_size) / TWO_PI;
+        int   idx  = (int)fidx;                     // parte entera
+        float t    = fidx - (float)idx;             // parte fraccional
+        if (idx >= g_precomputed_size) idx -= g_precomputed_size;
+        int next = idx + 1; if (next >= g_precomputed_size) next = 0;
+
+        // Interpolación lineal para mayor precisión/suavidad
+        cosAngle = g_precomputed_cos[idx] + t * (g_precomputed_cos[next] - g_precomputed_cos[idx]);
+        sinAngle = g_precomputed_sin[idx] + t * (g_precomputed_sin[next] - g_precomputed_sin[idx]);
+    } else {
+        // Fallback seguro
+        cosAngle = cosf(p->orbitAngle);
+        sinAngle = sinf(p->orbitAngle);
+    }
+
     // Calcular nueva posición orbital
-    float cosAngle = cosf(p->orbitAngle);
-    float sinAngle = sinf(p->orbitAngle);
-    
     p->position.x = p->orbitRadius * cosAngle;
     p->position.y = p->verticalOffset + p->orbitRadius * p->inclination * sinAngle;
     p->position.z = p->orbitRadius * sinAngle;
-    
+
     // Actualizar velocidad tangencial
     p->velocity.x = -p->orbitRadius * p->orbitSpeed * sinAngle;
-    p->velocity.y = p->orbitRadius * p->orbitSpeed * p->inclination * cosAngle;
-    p->velocity.z = p->orbitRadius * p->orbitSpeed * cosAngle;
-    
+    p->velocity.y =  p->orbitRadius * p->orbitSpeed * p->inclination * cosAngle;
+    p->velocity.z =  p->orbitRadius * p->orbitSpeed * cosAngle;
+
     // Actualizar vida
     p->life -= deltaTime;
 }
+
 
 void updateRingSystem(RingSystem* rs, float deltaTime) {
     // Usar schedule dynamic para mejor balance de carga
