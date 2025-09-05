@@ -482,11 +482,11 @@ void key_callback(GLFWwindow* window, int key, int scancode, int action, int mod
 }
 
 int main(int argc, char* argv[]) {
-    if (argc != 2) {
-        printf("Uso: %s <numero_de_particulas>\n", argv[0]);
-        printf("Ejemplo: %s 5000\n", argv[0]);
+    if (argc != 3) {
+        printf("Uso: ejecutable num_particulas num_anillos");
         return 1;
     }
+        
     
     int numParticles = atoi(argv[1]);
     int numRings = atoi(argv[2]);
