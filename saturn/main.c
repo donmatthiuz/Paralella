@@ -301,65 +301,93 @@ void destroyRingSystem(RingSystem* rs) {
     }
 }
 
-void createRingParticle(RingParticle* p, int ringIndex, int numRings, float minRadius, float maxRadius) {
-    // Calcular radio del anillo basado en el índice
+void createRingParticle(RingParticle* p, int ringIndex, int numRings, float minRadius, float maxRadius, 
+                      int particleIndex, int particlesInRing, int totalParticlesInRing) {
+    // Calcular radio del anillo principal
     float ringSpacing = (maxRadius - minRadius) / (numRings > 1 ? numRings - 1 : 1);
-    float baseRadius = minRadius + 0.4 + ringIndex * ringSpacing;
+    float baseRadius = minRadius + ringIndex * ringSpacing;
     
-    // Añadir variación aleatoria al radio
-    p->orbitRadius = baseRadius + ((float)rand() / RAND_MAX - 0.5f) * ringSpacing * 0.3f;
+    // Crear anillos más delgados y densos
+    float ringThickness = ringSpacing * 0.15f; // Anillos muy delgados
     
-    // Ángulo inicial aleatorio
-    p->orbitAngle = ((float)rand() / RAND_MAX) * 2.0f * M_PI;
+    // Distribución más densa: múltiples "capas" por anillo
+    int layersPerRing = 5; // Más capas para mayor densidad
+    int particlesPerLayer = totalParticlesInRing / layersPerRing;
     
-    // Velocidad orbital (más rápida para anillos internos - ley de Kepler)
-    float baseSpeed = 10.5f / sqrtf(p->orbitRadius);
-    p->orbitSpeed = baseSpeed * (0.8f + ((float)rand() / RAND_MAX) * 0.4f);
+    int layerIndex = particleIndex / particlesPerLayer;
+    if (layerIndex >= layersPerRing) layerIndex = layersPerRing - 1;
     
-    // Inclinación del anillo (Urano tiene anillos inclinados)
-    p->inclination = ((float)rand() / RAND_MAX - 0.5f) * 0.2f; // Pequeña inclinación
+    int positionInLayer = particleIndex % particlesPerLayer;
     
-    // Desplazamiento vertical para crear grosor del anillo
-    p->verticalOffset = ((float)rand() / RAND_MAX - 0.5f) * 0.1f;
+    // Radio específico dentro del anillo (distribución más compacta)
+    float layerOffset = (ringThickness / layersPerRing) * layerIndex - ringThickness * 0.5f;
+    p->orbitRadius = baseRadius + layerOffset;
+    
+    // Variación mínima para mantener orden
+    p->orbitRadius += ((float)rand() / RAND_MAX - 0.5f) * (ringThickness * 0.1f);
+    
+    // Distribución angular completamente uniforme
+    if (particlesPerLayer > 1) {
+        p->orbitAngle = (2.0f * M_PI * positionInLayer) / particlesPerLayer;
+        // Desplazamiento angular por capa para llenar huecos
+        p->orbitAngle += (2.0f * M_PI * layerIndex) / (layersPerRing * particlesPerLayer);
+    } else {
+        p->orbitAngle = ((float)rand() / RAND_MAX) * 2.0f * M_PI;
+    }
+    
+    // Variación angular mínima
+    p->orbitAngle += ((float)rand() / RAND_MAX - 0.5f) * 0.02f;
+    
+    // Velocidad orbital uniforme por anillo
+    p->orbitSpeed = 0.3f / sqrtf(p->orbitRadius + 1.0f);
+    // Pequeña variación para evitar sincronización perfecta
+    p->orbitSpeed *= (0.98f + ((float)rand() / RAND_MAX) * 0.04f);
+    
+    // Anillos completamente planos
+    p->inclination = 0.0f; // Sin inclinación
+    p->verticalOffset = ((float)rand() / RAND_MAX - 0.5f) * 0.005f; // Muy plano
     
     // Calcular posición inicial
     float cosAngle = cosf(p->orbitAngle);
     float sinAngle = sinf(p->orbitAngle);
     
     p->position.x = p->orbitRadius * cosAngle;
-    p->position.y = p->verticalOffset + p->orbitRadius * p->inclination * sinAngle;
+    p->position.y = p->verticalOffset;
     p->position.z = p->orbitRadius * sinAngle;
     
     // Velocidad tangencial
     p->velocity.x = -p->orbitRadius * p->orbitSpeed * sinAngle;
-    p->velocity.y = p->orbitRadius * p->orbitSpeed * p->inclination * cosAngle;
+    p->velocity.y = 0.0f;
     p->velocity.z = p->orbitRadius * p->orbitSpeed * cosAngle;
     
-    // Propiedades visuales
-    p->size = 0.02f + ((float)rand() / RAND_MAX) * 0.03f;
-    p->life = p->maxLife = 5.0f + ((float)rand() / RAND_MAX) * 10.0f;
+    // Propiedades visuales mejoradas
+    p->size = 0.02f + ((float)rand() / RAND_MAX) * 0.01f;
+    p->life = p->maxLife = 100.0f; // Vida muy larga
     p->ringIndex = ringIndex;
     
-    // Colores diferentes para cada anillo
+    // Colores más intensos y diferenciados
+    float brightness = 0.9f + ((float)rand() / RAND_MAX) * 0.1f;
     switch (ringIndex % 4) {
-        case 0: // Anillo interno - azulado
-            p->color = (Vec3){1.0f, 1.0f, 1.0f};
+        case 0: // Anillo interno - azul hielo intenso
+            p->color = (Vec3){0.5f * brightness, 0.7f * brightness, 1.0f * brightness};
             break;
-        case 1: // Segundo anillo - verdoso
-            p->color = (Vec3){0.7f, 1.0f, 0.8f};
+        case 1: // Segundo anillo - blanco brillante
+            p->color = (Vec3){1.0f * brightness, 1.0f * brightness, 1.0f * brightness};
             break;
-        case 2: // Tercer anillo - amarillento
-            p->color = (Vec3){1.0f, 1.0f, 0.7f};
+        case 2: // Tercer anillo - amarillo hielo
+            p->color = (Vec3){1.0f * brightness, 1.0f * brightness, 0.6f * brightness};
             break;
         case 3: // Anillo externo - rojizo
-            p->color = (Vec3){1.0f, 0.8f, 0.6f};
+            p->color = (Vec3){1.0f * brightness, 0.7f * brightness, 0.5f * brightness};
             break;
     }
 }
 
+
 void updateRingParticle(RingParticle* p, float deltaTime) {
     // Actualizar ángulo orbital
-    p->orbitAngle += p->orbitSpeed * deltaTime;
+    float speedMultiplier = 3.0f;
+    p->orbitAngle += p->orbitSpeed * deltaTime * speedMultiplier;
     if (p->orbitAngle > 2.0f * M_PI) {
         p->orbitAngle -= 2.0f * M_PI;
     }
@@ -385,10 +413,14 @@ void updateRingSystem(RingSystem* rs, float deltaTime) {
     for (size_t i = 0; i < rs->count; i++) {
         updateRingParticle(&rs->particles[i], deltaTime);
         
-        // Regenerar partícula si "murió"
+        // Las partículas casi nunca "mueren" ahora por la vida larga
         if (rs->particles[i].life <= 0) {
             int ringIndex = rs->particles[i].ringIndex;
-            createRingParticle(&rs->particles[i], ringIndex, rs->numRings, rs->minRadius, rs->maxRadius);
+            int particlesPerRing = rs->count / rs->numRings;
+            int particleIndexInRing = i % particlesPerRing;
+            
+            createRingParticle(&rs->particles[i], ringIndex, rs->numRings, rs->minRadius, rs->maxRadius, 
+                             particleIndexInRing, particlesPerRing, particlesPerRing);
         }
     }
 }
@@ -396,23 +428,90 @@ void updateRingSystem(RingSystem* rs, float deltaTime) {
 void drawRingSystem(RingSystem* rs) {
     glEnable(GL_POINT_SMOOTH);
     glEnable(GL_BLEND);
-    glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+    glBlendFunc(GL_SRC_ALPHA, GL_ONE); // Blend aditivo para mayor brillo
     
-    glPointSize(2.0f);
-    
-    glBegin(GL_POINTS);
-    for (size_t i = 0; i < rs->count; i++) {
-        RingParticle* p = &rs->particles[i];
-        if (p->life > 0) {
-            float alpha = (p->life / p->maxLife) * 0.8f;
-            glColor4f(p->color.x, p->color.y, p->color.z, alpha);
-            glVertex3f(p->position.x, p->position.y, p->position.z);
+    // Dibujar cada anillo por separado con diferentes configuraciones
+    for (int ring = 0; ring < rs->numRings; ring++) {
+        // Tamaño de punto más grande para crear discos más sólidos
+        float pointSize = 3.0f + (float)ring * 0.5f;
+        glPointSize(pointSize);
+        
+        glBegin(GL_POINTS);
+        for (size_t i = 0; i < rs->count; i++) {
+            RingParticle* p = &rs->particles[i];
+            if (p->life > 0 && p->ringIndex == ring) {
+                // Alpha más alto para mayor visibilidad
+                float alpha = 0.8f;
+                
+                // Efecto de densidad: más brillante donde hay más partículas cerca
+                float densityFactor = 1.0f;
+                int nearbyCount = 0;
+                for (size_t j = 0; j < rs->count; j++) {
+                    if (i != j && rs->particles[j].ringIndex == ring) {
+                        float dx = p->position.x - rs->particles[j].position.x;
+                        float dz = p->position.z - rs->particles[j].position.z;
+                        float dist = sqrtf(dx*dx + dz*dz);
+                        if (dist < 0.2f) nearbyCount++;
+                    }
+                }
+                densityFactor = 1.0f + (float)nearbyCount * 0.1f;
+                alpha *= fminf(densityFactor, 2.0f);
+                
+                glColor4f(p->color.x, p->color.y, p->color.z, alpha);
+                glVertex3f(p->position.x, p->position.y, p->position.z);
+            }
         }
+        glEnd();
+        
+        // Segunda pasada con puntos más pequeños para suavizar
+        glPointSize(pointSize * 0.6f);
+        glBegin(GL_POINTS);
+        for (size_t i = 0; i < rs->count; i++) {
+            RingParticle* p = &rs->particles[i];
+            if (p->life > 0 && p->ringIndex == ring) {
+                glColor4f(p->color.x, p->color.y, p->color.z, 0.3f);
+                glVertex3f(p->position.x, p->position.y, p->position.z);
+            }
+        }
+        glEnd();
     }
-    glEnd();
     
+    glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA); // Restaurar blend normal
     glDisable(GL_POINT_SMOOTH);
 }
+
+
+void initializeRingSystem(RingSystem* rs, int numParticles, int numRings) {
+    rs->count = numParticles;
+    
+    // Distribución más equitativa entre anillos
+    int particlesPerRing = numParticles / numRings;
+    int remainder = numParticles % numRings;
+    
+    int currentParticle = 0;
+    
+    printf("Distribuyendo %d partículas en %d anillos:\n", numParticles, numRings);
+    
+    for (int ring = 0; ring < numRings; ring++) {
+        int particlesInThisRing = particlesPerRing;
+        if (ring < remainder) {
+            particlesInThisRing++;
+        }
+        
+        printf("  Anillo %d: %d partículas (radio %.2f - %.2f)\n", 
+               ring, particlesInThisRing,
+               rs->minRadius + ring * ((rs->maxRadius - rs->minRadius) / (numRings - 1)),
+               rs->minRadius + ring * ((rs->maxRadius - rs->minRadius) / (numRings - 1)) + 
+               ((rs->maxRadius - rs->minRadius) / (numRings - 1)) * 0.15f);
+        
+        for (int p = 0; p < particlesInThisRing; p++) {
+            createRingParticle(&rs->particles[currentParticle], ring, numRings, 
+                             rs->minRadius, rs->maxRadius, p, particlesInThisRing, particlesInThisRing);
+            currentParticle++;
+        }
+    }
+}
+
 
 void setupCamera(float cameraAngle, float cameraHeight, float cameraDistance) {
     glMatrixMode(GL_PROJECTION);
@@ -585,13 +684,8 @@ int main(int argc, char* argv[]) {
     rs->count = numParticles;
     int particlesPerRing = numParticles / numRings;
     
-    for (int i = 0; i < numParticles; i++) {
-        int ringIndex = i / particlesPerRing;
-        if (ringIndex >= numRings) ringIndex = numRings - 1;
-        
-        createRingParticle(&rs->particles[i], ringIndex, numRings, minRadius, maxRadius);
-    }
-    
+    initializeRingSystem(rs, numParticles, numRings);
+
     printf("Sistema iniciado con %d anillos. Usa ESC para salir.\n", numRings);
     
     // Variables de control
@@ -600,7 +694,7 @@ int main(int argc, char* argv[]) {
     double planetRotation = 0.0;
     int frameCount = 0;
     float cameraHeight = 2.0f;
-    float cameraDistance = 8.0f;
+    float cameraDistance = 4.0f;
     
     // Bucle principal
     while (!glfwWindowShouldClose(window)) {
