@@ -537,87 +537,126 @@ void updateRingSystem(RingSystem* rs, float deltaTime) {
     }
 }
 
-
 void drawRingSystem(RingSystem* rs) {
     glEnable(GL_POINT_SMOOTH);
     glEnable(GL_BLEND);
     glBlendFunc(GL_SRC_ALPHA, GL_ONE); // Blend aditivo para mayor brillo
-
+    
     // === Pre-asignar memoria solo una vez ===
     static float* alphas = NULL;
-    static size_t alphas_capacity = 0;
-
-    if (alphas_capacity < rs->count) {
+    static float* vertices = NULL;  // Buffer para vértices
+    static float* colors = NULL;    // Buffer para colores
+    static int* valid_indices = NULL; // Índices de partículas válidas
+    static size_t buffer_capacity = 0;
+    
+    if (buffer_capacity < rs->count) {
         alphas = realloc(alphas, rs->count * sizeof(float));
-        alphas_capacity = rs->count;
+        vertices = realloc(vertices, rs->count * 3 * sizeof(float)); // x,y,z por partícula
+        colors = realloc(colors, rs->count * 4 * sizeof(float));     // r,g,b,a por partícula
+        valid_indices = realloc(valid_indices, rs->count * sizeof(int));
+        buffer_capacity = rs->count;
     }
-
+    
     for (int ring = 0; ring < rs->numRings; ring++) {
         float pointSize = 3.0f + (float)ring * 0.5f;
-
-
-        // === Cálculo paralelo de alpha ===
+        
+        // === FASE 1: Cálculo paralelo de alpha ===
         #pragma omp parallel for schedule(dynamic, 64)
         for (size_t i = 0; i < rs->count; i++) {
             RingParticle* p = &rs->particles[i];
             if (p->life > 0 && p->ringIndex == ring) {
                 float alpha = 0.8f;
                 int nearbyCount = 0;
-
-                // Buscar vecinos con optimización (evita sqrt, evita duplicados)
+                
+                // Buscar vecinos con optimización
                 for (size_t j = i + 1; j < rs->count; j++) {
                     if (rs->particles[j].ringIndex == ring) {
                         float dx = p->position.x - rs->particles[j].position.x;
                         float dz = p->position.z - rs->particles[j].position.z;
                         float dist_sq = dx * dx + dz * dz;
-                        if (dist_sq < 0.04f) { // (0.2f)^2
+                        if (dist_sq < 0.04f) {
                             nearbyCount++;
                         }
                     }
                 }
-
+                
                 float densityFactor = 1.0f + (float)nearbyCount * 0.1f;
                 alphas[i] = alpha * fminf(densityFactor, 2.0f);
             } else {
                 alphas[i] = 0.0f;
             }
         }
-
-        // === Primer pasada de dibujo ===
-        glPointSize(pointSize);
-        glBegin(GL_POINTS);
-        #pragma omp parallel for
-        for (size_t i = 0; i < rs->count; i++) {
-            RingParticle* p = &rs->particles[i];
-            if (alphas[i] > 0.0f) {
-                glColor4f(p->color.x, p->color.y, p->color.z, alphas[i]);
-                glVertex3f(p->position.x, p->position.y, p->position.z);
+ 
+        int valid_count = 0;
+        
+        #pragma omp parallel
+        {
+            int local_count = 0;
+            int thread_start_index = 0;
+            
+            #pragma omp for schedule(static)
+            for (size_t i = 0; i < rs->count; i++) {
+                if (alphas[i] > 0.0f) {
+                    local_count++;
+                }
+            }
+            
+            // ← Barrera implícita del for
+            
+            // FASE 2a: Calcular offset para cada thread (reduction)
+            #pragma omp critical
+            {
+                thread_start_index = valid_count;
+                valid_count += local_count;
+            }
+            
+            #pragma omp barrier  
+            
+            // FASE 2b: Llenar buffers con offset correcto
+            int local_index = thread_start_index;
+            #pragma omp for schedule(static)
+            for (size_t i = 0; i < rs->count; i++) {
+                if (alphas[i] > 0.0f) {
+                    RingParticle* p = &rs->particles[i];
+                    
+                    // Guardar índice y datos
+                    valid_indices[local_index] = (int)i;
+                    
+                    vertices[local_index * 3 + 0] = p->position.x;
+                    vertices[local_index * 3 + 1] = p->position.y;
+                    vertices[local_index * 3 + 2] = p->position.z;
+                    
+                    colors[local_index * 4 + 0] = p->color.x;
+                    colors[local_index * 4 + 1] = p->color.y;
+                    colors[local_index * 4 + 2] = p->color.z;
+                    colors[local_index * 4 + 3] = alphas[i];
+                    
+                    local_index++;
+                }
             }
         }
+        
+        
+        glPointSize(pointSize);
+        glBegin(GL_POINTS);
+        for (int k = 0; k < valid_count; k++) {
+            glColor4f(colors[k*4 + 0], colors[k*4 + 1], colors[k*4 + 2], colors[k*4 + 3]);
+            glVertex3f(vertices[k*3 + 0], vertices[k*3 + 1], vertices[k*3 + 2]);
+        }
         glEnd();
-
-
-        // === Segunda pasada con puntos más pequeños ===
+        
         glPointSize(pointSize * 0.6f);
         glBegin(GL_POINTS);
-        #pragma omp parallel for
-
-        for (size_t i = 0; i < rs->count; i++) {
-            RingParticle* p = &rs->particles[i];
-            if (alphas[i] > 0.0f) {
-                glColor4f(p->color.x, p->color.y, p->color.z, 0.3f);
-                glVertex3f(p->position.x, p->position.y, p->position.z);
-            }
+        for (int k = 0; k < valid_count; k++) {
+            glColor4f(colors[k*4 + 0], colors[k*4 + 1], colors[k*4 + 2], 0.3f);
+            glVertex3f(vertices[k*3 + 0], vertices[k*3 + 1], vertices[k*3 + 2]);
         }
         glEnd();
     }
-
-    glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA); // Restaurar blend normal
+    
+    glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
     glDisable(GL_POINT_SMOOTH);
 }
-
-
-
 void initializeRingSystem(RingSystem* rs, int numParticles, int numRings) {
     rs->count = numParticles;
 
