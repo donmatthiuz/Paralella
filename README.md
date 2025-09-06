@@ -1,41 +1,57 @@
 
-# Screen Savor de Hoyo Negro
 
-Este proyecto es un motor gráfico básico que utiliza **OpenGL**, **GLFW**, **GLEW** y **GLM** para representar un “hoyo negro” real como screen saver.
+### 1️⃣ Instalar dependencias
 
-## Requisitos
-
-Para compilar y ejecutar este proyecto necesitas:
-
-1. **Compilador C++** compatible con C++11 o superior (GCC/Clang).
-2. **GLFW** – Para crear ventanas y manejar input.
-3. **GLEW** – Para manejar extensiones de OpenGL.
-4. **GLM** – Biblioteca de matemáticas para gráficos (header-only).
-5. **OpenGL** y **GLUT** – Librerías gráficas básicas.
-
----
-
-## Instalación en Linux (Ubuntu/Debian)
+#### **En Linux (Ubuntu/Debian)**
 
 ```bash
 sudo apt update
-sudo apt install build-essential g++ cmake
-sudo apt install libglew-dev libglm-dev libglfw3-dev freeglut3-dev
+sudo apt install build-essential cmake git
+sudo apt install libglfw3-dev libglew-dev libglm-dev libx11-dev libxcursor-dev libxi-dev libxrandr-dev libxinerama-dev libopenal-dev
 ```
 
-* `build-essential` → herramientas de compilación básicas (gcc/g++/make).
-* `libglew-dev` → GLEW.
-* `libglm-dev` → GLM (header-only).
-* `libglfw3-dev` → GLFW.
-* `freeglut3-dev` → GLUT y OpenGL utilities.
+#### **En Windows**
+
+* Descarga e instala:
+
+  * [GLEW](http://glew.sourceforge.net/)
+  * [GLFW](https://www.glfw.org/download.html)
+* Configura tu IDE (Visual Studio, Code::Blocks, etc.) para linkear las librerías y agregar los `.dll` al ejecutable o al PATH.
+
+
 
 ---
 
-## Compilación
-
-- Ve al directorio de sequencial.
-- Compila tu programa usando el comando estándar:
+### 2️⃣ Compilar el programa
 
 ```bash
-gcc main.c -o blackhole  -lGL -lGLU -lglut -lGLEW -lglfw -lm
+gcc main.c -o particle_sim -lGL -lGLEW -lglfw -lm
+```
+
+* `-lGL` → OpenGL
+* `-lGLEW` → GLEW
+* `-lglfw` → GLFW
+* `-lm` → math (`sin`, `cos`, `sqrt`, etc.)
+
+---
+
+### 4️⃣ Ejecutar Serial
+
+Después de compilar:
+
+#### Linux/macOS
+
+```bash
+./particle_sim  1000
+```
+
+El 1000 es el numero de particulas, ve variando
+
+
+### 5️⃣ Ejecutar Paralella
+
+
+```bash
+
+gcc paralellv2.c -o particle_sim_parallel -lglfw -lGLEW -lGL -lopenal -lpthread -ldl -lm -fopenmp
 ```
