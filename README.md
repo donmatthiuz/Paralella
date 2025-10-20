@@ -1,6 +1,6 @@
 # Proyecto 2
 
-````markdown
+
 # Usar contenedor Docker C con OpenMP/OpenMPI
 
 ## Ejecutar el contenedor en segundo plano
