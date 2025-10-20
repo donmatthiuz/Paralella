@@ -1,0 +1,8 @@
+services:
+  c-dev:
+    build: .
+    container_name: dev-c
+    volumes:
+      - ./program:/usr/src/app/program
+    working_dir: /usr/src/app/program
+    tty: true
