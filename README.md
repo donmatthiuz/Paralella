@@ -31,3 +31,23 @@ mpicc -o bruteforce.o bruteforce.c
 ```bash
 mpirun -np 4 --allow-run-as-root --mca plm isolated ./bruteforce.o
 ```
+
+## Naive
+mpicc -o naived.o naive.c -lcrypt
+
+### Cifrar clave
+
+```bash
+mpirun -np 1 --allow-run-as-root --mca plm isolated ./naived.o encrypt ./data/texto.txt 123456
+```
+
+### Verificar cifrado 
+
+mpirun -np 1 --allow-run-as-root --mca plm isolated ./naived.o decrypt ./data/texto.txt.enc 123456
+
+### Decifrar clave
+
+```bash
+mpirun -np 4 --allow-run-as-root --mca plm isolated ./naived.o  crack ./data/texto.txt.enc " es una prueba"
+```
+mpicc -o naive.o naive.c
