@@ -33,7 +33,10 @@ mpirun -np 4 --allow-run-as-root --mca plm isolated ./bruteforce.o
 ```
 
 ## Naive
+
+```bash
 mpicc -o naived.o naive.c -lcrypt
+```
 
 ### Cifrar clave
 
@@ -50,4 +53,3 @@ mpirun -np 1 --allow-run-as-root --mca plm isolated ./naived.o decrypt ./data/te
 ```bash
 mpirun -np 4 --allow-run-as-root --mca plm isolated ./naived.o  crack ./data/texto.txt.enc " es una prueba"
 ```
-mpicc -o naive.o naive.c

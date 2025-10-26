@@ -9,6 +9,7 @@
 #include <unistd.h>
 #include <rpc/des_crypt.h>
 #include <sys/time.h>
+#include <time.h>
 
 void decrypt(long key, char *ciph, int len){
   long k = 0;
@@ -46,6 +47,9 @@ int tryKey(long key, char *ciph, int len, char *search){
 }
 
 void encrypt_file(char *input_file, char *output_file, long key) {
+  struct timeval start, end;
+  gettimeofday(&start, NULL);
+  
   FILE *fin = fopen(input_file, "r");
   FILE *fout = fopen(output_file, "wb");
   
@@ -84,13 +88,26 @@ void encrypt_file(char *input_file, char *output_file, long key) {
   free(buffer);
   fclose(fin);
   fclose(fout);
+  
+  gettimeofday(&end, NULL);
+  double elapsed = (end.tv_sec - start.tv_sec) + 
+                   (end.tv_usec - start.tv_usec) / 1000000.0;
+  
+  printf("\n========================================\n");
+  printf("=== CIFRADO COMPLETADO ===\n");
+  printf("========================================\n");
   printf("Archivo cifrado guardado en: %s\n", output_file);
   printf("Tamaño original: %ld bytes\n", file_size);
   printf("Tamaño cifrado: %ld bytes\n", padded_size);
   printf("Clave usada: %ld\n", key);
+  printf("Tiempo de cifrado: %.6f segundos\n", elapsed);
+  printf("========================================\n");
 }
 
 void decrypt_file(char *input_file, char *output_file, long key) {
+  struct timeval start, end;
+  gettimeofday(&start, NULL);
+  
   FILE *fin = fopen(input_file, "rb");
   FILE *fout = fopen(output_file, "w");
   
@@ -116,12 +133,23 @@ void decrypt_file(char *input_file, char *output_file, long key) {
   // Escribir solo el contenido original (sin padding)
   fwrite(buffer, 1, original_size, fout);
   
+  gettimeofday(&end, NULL);
+  double elapsed = (end.tv_sec - start.tv_sec) + 
+                   (end.tv_usec - start.tv_usec) / 1000000.0;
+  
+  printf("\n========================================\n");
+  printf("=== DESCIFRADO COMPLETADO ===\n");
+  printf("========================================\n");
   printf("Archivo descifrado guardado en: %s\n", output_file);
+  printf("Clave usada: %ld\n", key);
+  printf("Tamaño descifrado: %ld bytes\n", original_size);
   printf("Contenido: ");
   for(long i = 0; i < original_size; i++){
     printf("%c", buffer[i]);
   }
   printf("\n");
+  printf("Tiempo de descifrado: %.6f segundos\n", elapsed);
+  printf("========================================\n");
   
   free(buffer);
   fclose(fin);
@@ -178,11 +206,17 @@ void bruteforce_crack(char *cipher_file, char *search_text) {
   
   if(id == 0){
     gettimeofday(&start, NULL);
-    printf("\n=== INICIANDO BRUTEFORCE ===\n");
+    printf("\n========================================\n");
+    printf("=== INICIANDO BRUTEFORCE ===\n");
+    printf("========================================\n");
+    printf("Fecha y hora de inicio: ");
+    time_t now = time(NULL);
+    printf("%s", ctime(&now));
     printf("Espacio de búsqueda: 0 a %ld (2^56)\n", upper);
     printf("Procesos: %d\n", N);
     printf("Rango por proceso: ~%ld claves\n", range_per_node);
-    printf("Texto a buscar: '%s'\n\n", search_text);
+    printf("Texto a buscar: '%s'\n", search_text);
+    printf("========================================\n\n");
   }
   
   MPI_Irecv(&found, 1, MPI_LONG, MPI_ANY_SOURCE, MPI_ANY_TAG, comm, &req);
@@ -250,27 +284,43 @@ void bruteforce_crack(char *cipher_file, char *search_text) {
       }
       
       printf("\n========================================\n");
-      printf("=== RESULTADO DEL BRUTEFORCE ===\n");
+      printf("=== ¡CLAVE ENCONTRADA! ===\n");
       printf("========================================\n");
-      printf("Clave encontrada: %ld\n", found);
+      printf("Clave: %ld (0x%lX)\n", found, found);
       printf("Texto descifrado: ");
       for(long i = 0; i < original_size; i++){
         printf("%c", temp[i]);
       }
       printf("\n");
-      printf("Tiempo de ejecución: %.6f segundos\n", elapsed);
-      printf("Tiempo de ejecución: %.2f minutos\n", elapsed/60.0);
-      printf("Tiempo de ejecución: %.2f horas\n", elapsed/3600.0);
-      printf("Procesos usados: %d\n", N);
-      printf("Claves probadas aproximadamente: %ld\n", keys_checked * N);
-      printf("Velocidad promedio: %.2f millones de claves/segundo\n", 
+      printf("----------------------------------------\n");
+      printf("TIEMPOS DE EJECUCIÓN:\n");
+      printf("----------------------------------------\n");
+      printf("  %.6f segundos\n", elapsed);
+      printf("  %.2f minutos\n", elapsed/60.0);
+      printf("  %.2f horas\n", elapsed/3600.0);
+      if(elapsed >= 86400){
+        printf("  %.2f días\n", elapsed/86400.0);
+      }
+      printf("----------------------------------------\n");
+      printf("ESTADÍSTICAS:\n");
+      printf("----------------------------------------\n");
+      printf("  Procesos usados: %d\n", N);
+      printf("  Claves probadas: ~%ld\n", keys_checked * N);
+      printf("  Velocidad promedio: %.2f millones de claves/seg\n", 
              (keys_checked * N) / elapsed / 1000000.0);
+      printf("  Porcentaje del espacio explorado: %.6f%%\n", 
+             ((double)(keys_checked * N) / (double)upper) * 100.0);
       printf("========================================\n");
       
       free(temp);
     } else {
-      printf("\n¡Clave NO encontrada en el espacio de búsqueda!\n");
-      printf("Tiempo de ejecución: %.6f segundos\n", elapsed);
+      printf("\n========================================\n");
+      printf("=== BÚSQUEDA COMPLETADA ===\n");
+      printf("========================================\n");
+      printf("¡Clave NO encontrada en el espacio de búsqueda!\n");
+      printf("Tiempo de ejecución: %.6f segundos (%.2f horas)\n", elapsed, elapsed/3600.0);
+      printf("Claves probadas: ~%ld\n", keys_checked * N);
+      printf("========================================\n");
     }
   }
   
