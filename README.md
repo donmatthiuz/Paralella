@@ -19,3 +19,15 @@ docker exec -it dev-c bash
 ```bash
 mpicc ejemplo.c -o ejemplo
 ```
+
+
+## Para compilar bruteforce ve a la carpeta de paralela
+
+```bash
+mpicc -o bruteforce.o naive.c
+```
+
+## Para ver que funciona bruteforce ejecuta
+```bash
+mpirun -np 4 --allow-run-as-root --mca plm isolated ./bruteforce
+```
