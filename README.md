@@ -130,6 +130,13 @@ gcc des_cipher.c -o des_cipher.o -lcrypt
 mpicc ./paralela/naive.c -o ./paralela/naived.o -lcrypt
 ```
 
+#### Ciclico 
+
+```bash
+mpicc ./paralela/ciclico.c -o ./paralela/ciclico.o -lcrypt
+```
+
+
 **Explicación:**
 
 * `mpicc`: compilador para programas MPI.
@@ -170,6 +177,11 @@ gcc -./sequencial/sequencial.c -o ./sequencial/sequencial.o
 mpirun -np 4 --allow-run-as-root --mca plm isolated ./paralela/naived.o ./data/texto.txt.enc " es una prueba"
 ```
 
+#### Ciclico
+
+```sh
+mpirun -np 4 --allow-run-as-root --mca plm isolated ./paralela/ciclica.o ./data/texto.txt.enc " es una prueba de"
+```
 **Explicación:**
 
 * `mpirun`: ejecuta el programa en paralelo con MPI.
