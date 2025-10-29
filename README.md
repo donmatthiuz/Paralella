@@ -124,6 +124,8 @@ gcc des_cipher.c -o des_cipher.o -lcrypt
 
 ### Compilación
 
+#### Naive Paralelo
+
 ```bash
 mpicc ./paralela/naive.c -o ./paralela/naived.o -lcrypt
 ```
@@ -135,9 +137,34 @@ mpicc ./paralela/naive.c -o ./paralela/naived.o -lcrypt
 * `-o ./paralela/naived.o`: nombre del ejecutable.
 * `-lcrypt`: librería de cifrado necesaria para comparar hashes DES.
 
+#### Secuencial
+
+```bash
+gcc -./sequencial/sequencial.c -o ./sequencial/sequencial.o
+```
+
 ---
 
-### Ejecutar el ataque de fuerza bruta
+### Ejecutar el ataque de fuerza bruta secuencial
+
+```bash
+./sequencial/sequencial ./data/texto.txt.enc "frase_o_palabra_del_texto" 0 999999
+
+```
+
+**Explicación:**
+
+* `mpirun`: ejecuta el programa en paralelo con MPI.
+* `-np 4`: usa 4 procesos de ejecución.
+* `--allow-run-as-root`: permite correrlo como usuario root (requerido en Docker).
+* `--mca plm isolated`: ejecuta los procesos MPI sin un gestor externo (modo aislado).
+* `./paralela/naived.o`: ejecutable del ataque de fuerza bruta.
+* `./data/texto.txt.enc`: archivo cifrado a descifrar.
+* `" es una prueba"`: texto esperado dentro del mensaje descifrado (se usa como validación para saber si la clave encontrada es correcta).
+
+---
+
+### Ejecutar el ataque de fuerza bruta paralelo
 
 ```bash
 mpirun -np 4 --allow-run-as-root --mca plm isolated ./paralela/naived.o ./data/texto.txt.enc " es una prueba"
