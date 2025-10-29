@@ -6,6 +6,8 @@
 #include <time.h>
 #include <errno.h>
 #include <stdint.h>
+#include <time.h>
+#include <inttypes.h>
 
 void decrypt(long key, char *ciph, int len){
   long k = 0;
@@ -64,7 +66,12 @@ long brute_force_sequential(const char *cipher_file, const char *search_text,
     }
     fclose(fin);
 
-    printf("Tamaño original: %ld bytes, tamaño cifrado (padded): %zu bytes\n", original_size, padded_size);
+    printf("Tamaño original: %ld bytes, tamaño cifrado (padded): %zu bytes\n", original_size, padded_size);struct timespec t_start, t_now;
+    clock_gettime(CLOCK_MONOTONIC, &t_start);
+
+    uint64_t keys_tried = 0;
+    uint64_t total_keys = (uint64_t)max_key - (uint64_t)min_key + 1;
+    const uint64_t PROGRESS_INTERVAL = 100000;
 
     long found = 0;
     for (long k = min_key; k <= max_key; ++k) {
@@ -73,6 +80,22 @@ long brute_force_sequential(const char *cipher_file, const char *search_text,
             found = 1;
             break;
         }
+        if ((keys_tried % PROGRESS_INTERVAL) == 0) {
+            clock_gettime(CLOCK_MONOTONIC, &t_now);
+            double elapsed = (t_now.tv_sec - t_start.tv_sec) +
+                            (t_now.tv_nsec - t_start.tv_nsec) / 1e9;
+            double keys_per_sec = keys_tried / elapsed;
+            uint64_t remaining = total_keys - keys_tried;
+            double eta_seconds = remaining / (keys_per_sec > 0 ? keys_per_sec : 1.0);
+
+            int hours = (int)(eta_seconds / 3600);
+            int mins = (int)((eta_seconds - hours*3600) / 60);
+            int secs = (int)(eta_seconds - hours*3600 - mins*60);
+
+            printf("[progreso] probadas=%" PRIu64 " / %" PRIu64 "  time=%.2fs  rate=%.0f k/s  ETA=%02d:%02d:%02d\n",
+                keys_tried, total_keys, elapsed, keys_per_sec/1000.0, hours, mins, secs);
+        }
+        
         if (k == max_key) break;
     }
     free(cipher);
