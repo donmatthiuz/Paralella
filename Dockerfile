@@ -14,7 +14,9 @@ RUN apt-get update && \
     openmpi-bin \
     libopenmpi-dev \
     vim \
-    git && \
+    git \
+    iputils-ping \
+    openssh-client && \
     apt-get clean && \
     rm -rf /var/lib/apt/lists/*
 
