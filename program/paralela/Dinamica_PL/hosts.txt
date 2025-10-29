@@ -1,0 +1,3 @@
+localhost slots=4
+10.20.1.11 slots=4
+10.20.1.12 slots=4
