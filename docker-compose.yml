@@ -2,7 +2,9 @@ services:
   c-dev:
     build: .
     container_name: dev-c
+    network_mode: host  # Agregar esto
     volumes:
       - ./program:/usr/src/app/program
     working_dir: /usr/src/app/program
+    stdin_open: true  # Agregar esto
     tty: true
