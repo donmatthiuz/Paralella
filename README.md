@@ -194,3 +194,25 @@ mpirun -np 4 --allow-run-as-root --mca plm isolated ./paralela/ciclica.o ./data/
 
 ---
 
+## 🧠 Dinamica con clusters
+
+
+### Prueba en el docker de master
+```sh
+mpirun -np 12 --allow-run-as-root \
+    --mca plm_rsh_agent /usr/local/bin/mpi-docker-exec \
+    --hostfile hosts.txt \
+    hostname
+```
+
+### Ejecutar la prueba
+
+```sh
+mpirun -np 12 --allow-run-as-root \
+    --mca plm_rsh_agent /usr/local/bin/mpi-docker-exec \
+    --mca btl_tcp_if_include 10.20.1.0/24 \
+    --mca oob_tcp_if_include 10.20.1.0/24 \
+    --hostfile hosts.txt \
+    /usr/src/app/program/paralela/Dinamica_PL/des_bruteforce_dynamic \
+    /usr/src/app/program/data/texto.txt.enc " es una prueba"
+```
