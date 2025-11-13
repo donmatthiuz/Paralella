@@ -142,6 +142,10 @@ Si hay coordinación, no habría problema, probablemente quién llega primero es
 
 4. ¿Qué refleja el promedio del brillo respecto al comportamiento de la GPU?
 
+Lo que refleja es el uso de memoria compartida, ya que lo que hace en esta parte es guardar en un array todos los randoms calculados y luego haciedo uso de la sentencia atomic add hace la suma con un lock que impide la sobreescritura, luego al final se calcula el promedio solo haciendo uso del primer hilo del bloque. 
+
+
+
 ## Fase 4
 
 Gustavo Cruz:
@@ -160,13 +164,32 @@ Mathew Cordero:
 
 1. ¿Qué aprendiste sobre cómo CUDA distribuye el trabajo entre hilos y bloques?
 
+Cuda los distribuye entre hilos de manera paralella pero nos da la posibilidad de hacer espera entre hilos. 
+
+En cambio con los bloques es imposible hacer eso obligatoriamente debemos de pasarlos por CPU. 
+
+
+
 2. ¿Qué fue lo más difícil de entender del paralelismo?
+
+Lo mas dificil es entender que los bloques no pueden ejecutarse en paralello y despues esperar, por eso mismo en la parte 2 no se pudo imprimir para que apareciera el print de manera ordenada. 
 
 3. Si pudieras mejorar el laboratorio, ¿qué cambio harías en el algoritmo?
 
+Lo que haria es pasar los blqoues a la CPU para que imprimiese de manera ordenada las galaxias. 
+
+
 4. ¿Qué analogía del mundo real usarías para explicar el concepto de “sincronización de hilos”?
 
+Es como un grupo de hormigas que van a conseguir comida, cada una se encarga de su parte y van en grupos como si fuesen bloques de CUDA, pero ambas llegan al hormiguero a dejar la comida como si se tratase de entregar al CPU la carga de trabajo. 
+
+
+
 5. ¿Cómo verificarías que realmente se está ejecutando en GPU y no en CPU?
+
+Con NVIDI SMI te dice que procesos ejecutas en tu grafica.
+
+
 
 Pedro Guzmán:
 
