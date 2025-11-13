@@ -172,12 +172,21 @@ Pedro Guzmán:
 
 1. ¿Qué aprendiste sobre cómo CUDA distribuye el trabajo entre hilos y bloques?
 
+R// Aprendí que cada bloque es como una unidad de procesamiento y dentro de esta el trabajo se puede dividir en hilos. 
+
 2. ¿Qué fue lo más difícil de entender del paralelismo?
+
+R// Para mí la sincronización pues es bastante complejo y confuso entender como evitar que haya condiciones de carrera y que hacer para que los hilos esperen a los demás para terminar su ejecución. 
 
 3. Si pudieras mejorar el laboratorio, ¿qué cambio harías en el algoritmo?
 
+R//  Para mí el algoritmo es bastante bueno aunque buscaría alguna forma de que la generación de números aleatorios fuera más sencilla. 
+
 4. ¿Qué analogía del mundo real usarías para explicar el concepto de “sincronización de hilos”?
+
+R// Una carrera de relevos, los competidores deben esperar a sus demás compañeros para seguir en la carrera. 
 
 5. ¿Cómo verificarías que realmente se está ejecutando en GPU y no en CPU?
 
+R// Usar el comand nvidiasmi mientras se ejecuta el programa, este programa indica características de la GPU como el consumo de energía, memoria, etc. Si al ejecutarlo la firma es parecida a una firma en donde se ejecuta un programa entonces podemos concluir que estamos en el GPU, si no posiblemente este en el CPU. 
 
