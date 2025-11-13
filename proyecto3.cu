@@ -13,20 +13,35 @@ __global__ void setup_kernel(curandState *state, unsigned long long seed) {
     curand_init(seed, idx, 0, &state[idx]);
 }
 
-__global__ void helloFromGalaxy(curandState *state) {
+__global__ void helloFromGalaxy(curandState *state, int hilosBloque) {
+     
+     __shared__ int suma;
+     if (threadIdx.x == 0) {
+        suma = 0;
+    }
 
-    __shared__ float avg [64];
-
+    __syncthreads();
+    
     int idx = blockIdx.x * blockDim.x + threadIdx.x;
+
+    __shared__ int brillosCompartidos[256];
+   
 
     float uniform_float = curand_uniform(&state[idx]);
 
     int random_int = (int)(uniform_float * (RANGE + 1));
     if (random_int > RANGE) random_int = RANGE;  
-    
-    printf("Galaxia: %d, Estrella - %d -> Brillo promedio: %d\n", blockIdx.x, threadIdx.x, random_int);
 
-    __syncthreads();
+     brillosCompartidos[threadIdx.x] = random_int;
+     atomicAdd(&suma, random_int);
+     __syncthreads();
+  
+    if (threadIdx.x == 0) {
+        float promedio = (float)suma / hilosBloque;
+        printf(">>> Galaxia %d completa Brillo Promedio: %.2f:\n", blockIdx.x, promedio);
+    }
+	 __syncthreads();
+
   
     
 }
@@ -50,7 +65,7 @@ int main() {
     cudaDeviceSynchronize();
     
 
-    helloFromGalaxy<<<numBlocks, threadsPerBlock>>>(d_state);
+    helloFromGalaxy<<<numBlocks, threadsPerBlock>>>(d_state, threadsPerBlock );
     cudaDeviceSynchronize();
     cudaFree(d_state);
     
