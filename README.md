@@ -140,6 +140,9 @@ Cómo se mencionó antes, en bloques la comunicación entre hilos se puede dar d
 3. ¿Qué pasaría si más de una estrella intenta escribir al mismo tiempo en la misma posición?
 Si hay coordinación, no habría problema, probablemente quién llega primero escribe y el siguiente busca otra dirección de memoria, sin coordinación, una race condition.
 
+
+![Final](examen_final.png)
+
 4. ¿Qué refleja el promedio del brillo respecto al comportamiento de la GPU?
 
 Lo que refleja es el uso de memoria compartida, ya que lo que hace en esta parte es guardar en un array todos los randoms calculados y luego haciedo uso de la sentencia atomic add hace la suma con un lock que impide la sobreescritura, luego al final se calcula el promedio solo haciendo uso del primer hilo del bloque. 
