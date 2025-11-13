@@ -75,6 +75,7 @@ long brute_force_sequential(const char *cipher_file, const char *search_text,
 
     long found = 0;
     for (long k = min_key; k <= max_key; ++k) {
+        keys_tried++; 
         if (tryKey(k, (char *)cipher, padded_size, (char *)search_text)) {
             printf("LLAVE ENCONTRADA: %ld\n", k);
             found = 1;
