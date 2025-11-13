@@ -150,15 +150,21 @@ Lo que refleja es el uso de memoria compartida, ya que lo que hace en esta parte
 
 Gustavo Cruz:
 
+
 1. ¿Qué aprendiste sobre cómo CUDA distribuye el trabajo entre hilos y bloques?
+Cuda distribuye el trabajo en bloques e hilos, y cada bloque puede contener varios hilos que ejecutan el mismo kernel en paralelo, los bloques son independientes y estos bloques se reparten entre los cores de la GPU para correr el programa.
 
 2. ¿Qué fue lo más difícil de entender del paralelismo?
+Como aplicar correctamente las funciones de paralelización, pues muchas veces menos es más y en paralelización se nota bastante, no siempre un código lleno de directivas de paralelización va a correr mejor que uno simple. Además que tener una estrategia previa de paralelización ayuda bastante a mitigar esto. También me costo aprender la coordinación de los threads.
 
 3. Si pudieras mejorar el laboratorio, ¿qué cambio harías en el algoritmo?
+Cargar los bloques en CPU en lugar del GPU para que se impriman bien.
 
 4. ¿Qué analogía del mundo real usarías para explicar el concepto de “sincronización de hilos”?
+El trabajo de los meseros en un restaurante: varios pueden estar atendiendo distintas mesas al mismo tiempo, pero cuando una mesa específica hace un pedido, solo un mesero la atiende mientras los demás esperan su turno o atienden otras mesas.
 
 5. ¿Cómo verificarías que realmente se está ejecutando en GPU y no en CPU?
+Como uso linux, revisaría si el proceso aparece en nvidia-smi que es un programa que viene con los drivers de nvidia  te muestre que procesos ejecuta la gpu
 
 Mathew Cordero:
 
